@@ -1,0 +1,5 @@
+# * @Zunia-Lab/maintainers
+
+# Fallback until GitHub teams exist — replace with @Zunia-Lab/security for crypto paths
+/docs/adr/ @Zunia-Lab/maintainers
+/src/ @Zunia-Lab/maintainers
