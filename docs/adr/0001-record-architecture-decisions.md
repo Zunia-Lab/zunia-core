@@ -13,4 +13,4 @@ Use Markdown ADRs in `docs/adr/` (this repo for kernel/custody; product ADRs may
 
 ## Consequences
 
-No production crypto or social-login code merges until relevant ADRs are Accepted or Explicitly Deferred with an owner.
+No production crypto code merges until relevant ADRs are Accepted or Explicitly Deferred with an owner. Custody is settled in [ADR-0003](./0003-custody-model.md) (self-custody only).

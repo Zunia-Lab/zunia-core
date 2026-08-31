@@ -1,0 +1,26 @@
+# Custody policy (product-wide)
+
+schema_version: 1
+# Source of truth: zunia-core/docs/adr/0003-custody-model.md (Accepted)
+
+model: self_custody_only
+
+allowed:
+  - create_bip39_seed
+  - import_bip39_seed
+  - optional_bip39_passphrase
+  - hardware_wallet_when_supported
+  - local_encrypted_keyring_on_device
+
+forbidden:
+  - mpc_tss
+  - social_login_wallet
+  - email_google_apple_wallet_creation
+  - encrypted_cloud_seed_backup
+  - backend_stored_seed_or_key_shares
+  - passkey_derived_wallet
+  - smart_account_aa_as_primary
+  - custodial_keys_by_zunia
+
+recovery: seed_phrase_only
+backend_may_store_seeds: false
