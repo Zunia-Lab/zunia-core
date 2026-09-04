@@ -16,13 +16,13 @@ jobs:
     name: Test and lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The sibling registry checkout, so the address vectors and the real-registry parse test
       # run for real rather than skipping. A skip here would hide a regression affecting every
       # chain the wallet offers.
       - name: Check out zunia-chain-registry
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Zunia-Lab/zunia-chain-registry
           path: .registry
@@ -79,8 +79,8 @@ jobs:
     name: Vectors are current
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: Zunia-Lab/zunia-chain-registry
           path: .registry
@@ -127,7 +127,7 @@ jobs:
     name: Fuzz targets build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         run: rustup show active-toolchain
