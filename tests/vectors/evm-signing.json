@@ -1,0 +1,826 @@
+{
+  "description": "Ethereum golden vectors generated with ethers v6. Asserted byte for byte by crates/evm/tests/golden_vectors.rs. Regenerate with pnpm generate:evm; a diff means our encoding changed and every signature we produce is suspect.",
+  "generator": "ethers v6",
+  "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  "accounts": [
+    {
+      "path": "m/44'/60'/0'/0/0",
+      "privateKey": "1ab42cc412b618bdea3a599e3c9bae199ebf030895b039e9db1e30dafb12b727",
+      "publicKeyCompressed": "0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299",
+      "address": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      "addressLowercase": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
+    },
+    {
+      "path": "m/44'/60'/0'/0/1",
+      "privateKey": "9a983cb3d832fbde5ab49d692b7a8bf5b5d232479c99333d0fc8e1d21f1b55b6",
+      "publicKeyCompressed": "039fd0991d0222b4e1339c1a1a5b5f6d9f6a96672a3247b638ee6156d9ea877a2f",
+      "address": "0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0",
+      "addressLowercase": "0x6fac4d18c912343bf86fa7049364dd4e424ab9c0"
+    },
+    {
+      "path": "m/44'/60'/1'/0/0",
+      "privateKey": "318470c858f622e48a80120a1fc3c8460d67a7bf31b3273a6d27d4c013f2f8d3",
+      "publicKeyCompressed": "038ccc8186e5933e845afd096cc6d3f2fdb25fbe4db4864b944619afa8e4e8bd5e",
+      "address": "0x78839F6054d7ed13918bAe0473BA31b1Ca9D7265",
+      "addressLowercase": "0x78839f6054d7ed13918bae0473ba31b1ca9d7265"
+    },
+    {
+      "path": "m/44'/60'/0'/0/5",
+      "privateKey": "5a8787e6b7e11a74a22ee97b8164c7d69cd5668c6065bbfbc87e6a34a24b135c",
+      "publicKeyCompressed": "03e3b32aa461b0be7833198fbb49c0d3f5a2bbabf9ab052a7bb97545d0e05c2816",
+      "address": "0xA40cFBFc8534FFC84E20a7d8bBC3729B26a35F6f",
+      "addressLowercase": "0xa40cfbfc8534ffc84e20a7d8bbc3729b26a35f6f"
+    }
+  ],
+  "transactions": [
+    {
+      "name": "legacy_transfer",
+      "note": "The plainest possible transaction: an EIP-155 legacy transfer with no data.",
+      "signerPath": "m/44'/60'/0'/0/0",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      "tx": {
+        "type": 0,
+        "chainId": "1",
+        "nonce": "9",
+        "gasLimit": "21000",
+        "gasPrice": "20000000000",
+        "maxFeePerGas": null,
+        "maxPriorityFeePerGas": null,
+        "to": "0x3535353535353535353535353535353535353535",
+        "value": "1000000000000000000",
+        "data": "0x",
+        "accessList": []
+      },
+      "signPayload": "ec098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a764000080018080",
+      "signHash": "daf5a779ae972f972197303d7b574746c7ef83eadac0f2791ad23db92e4c8e53",
+      "signature": {
+        "r": "119c10a087377a1845bc0dbab4db97372316650ee8aa6e0c62c9cc1f307de20f",
+        "s": "7aed856495a3303f3260b5975bb2cf20313b42eedbbcbfff9fbfaead4735ffe5",
+        "vNormalised": "27",
+        "yParity": 0,
+        "onWireV": "37"
+      },
+      "signedSerialized": "f86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a0119c10a087377a1845bc0dbab4db97372316650ee8aa6e0c62c9cc1f307de20fa07aed856495a3303f3260b5975bb2cf20313b42eedbbcbfff9fbfaead4735ffe5",
+      "txHash": "97ce4bbdab2c0206fdd9a14a39268308182f3ccd37c665b3729f4e4fe715ab98"
+    },
+    {
+      "name": "legacy_zero_value_with_data",
+      "note": "A contract call. Zero value must RLP-encode as an empty string, not as 0x00.",
+      "signerPath": "m/44'/60'/0'/0/0",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      "tx": {
+        "type": 0,
+        "chainId": "1",
+        "nonce": "0",
+        "gasLimit": "100000",
+        "gasPrice": "1",
+        "maxFeePerGas": null,
+        "maxPriorityFeePerGas": null,
+        "to": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+        "value": "0",
+        "data": "0xa9059cbb0000000000000000000000003535353535353535353535353535353535353535000000000000000000000000000000000000000000000000000000000000000a",
+        "accessList": []
+      },
+      "signPayload": "f8658001830186a094dac17f958d2ee523a2206206994597c13d831ec780b844a9059cbb0000000000000000000000003535353535353535353535353535353535353535000000000000000000000000000000000000000000000000000000000000000a018080",
+      "signHash": "b0943e768b9e1f2a719a1e87f2888ad08b86c5b60be89e512b29743670b0447a",
+      "signature": {
+        "r": "6e9994484d6434b3c06b119fed931fb8f13155420e2780388b6a006e2442353c",
+        "s": "669fce4db6e62779a7bba0cea08596bc0142ae8dc92c49f55230ca01747eb105",
+        "vNormalised": "27",
+        "yParity": 0,
+        "onWireV": "37"
+      },
+      "signedSerialized": "f8a58001830186a094dac17f958d2ee523a2206206994597c13d831ec780b844a9059cbb0000000000000000000000003535353535353535353535353535353535353535000000000000000000000000000000000000000000000000000000000000000a25a06e9994484d6434b3c06b119fed931fb8f13155420e2780388b6a006e2442353ca0669fce4db6e62779a7bba0cea08596bc0142ae8dc92c49f55230ca01747eb105",
+      "txHash": "284f6c6d6c3442d8fc42f6c2d9c60fd2d877a9a0279ddfa491b41446fb383126"
+    },
+    {
+      "name": "legacy_contract_creation",
+      "note": "No recipient. The `to` field is an empty RLP string, which is what makes it a deploy.",
+      "signerPath": "m/44'/60'/0'/0/0",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      "tx": {
+        "type": 0,
+        "chainId": "1",
+        "nonce": "3",
+        "gasLimit": "500000",
+        "gasPrice": "10000000000",
+        "maxFeePerGas": null,
+        "maxPriorityFeePerGas": null,
+        "to": null,
+        "value": "0",
+        "data": "0x60806040",
+        "accessList": []
+      },
+      "signPayload": "d5038502540be4008307a12080808460806040018080",
+      "signHash": "c282ccdfa3e6d748669e9cfe84b3fcd4a0c6c22ca14c52da0b5a63b3987635b3",
+      "signature": {
+        "r": "dd22d1b70ff19bfc39366e0d656e6587befba78bc6b386fda5ddabaf5c13326d",
+        "s": "58dca9b75d2e0a3028224243cc48ab0075ec14ebca5cdd99cbc702ceb902544c",
+        "vNormalised": "28",
+        "yParity": 1,
+        "onWireV": "38"
+      },
+      "signedSerialized": "f855038502540be4008307a1208080846080604026a0dd22d1b70ff19bfc39366e0d656e6587befba78bc6b386fda5ddabaf5c13326da058dca9b75d2e0a3028224243cc48ab0075ec14ebca5cdd99cbc702ceb902544c",
+      "txHash": "7ccfe0c44d968a6322741dce00177da9fc0c25dddfe067c145a8aaa65654d11b"
+    },
+    {
+      "name": "legacy_large_chain_id",
+      "note": "Injective's chain id. A 32-bit v computation overflows here, so this is the case that catches it.",
+      "signerPath": "m/44'/60'/0'/0/0",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      "tx": {
+        "type": 0,
+        "chainId": "2525",
+        "nonce": "1",
+        "gasLimit": "300000",
+        "gasPrice": "500000000",
+        "maxFeePerGas": null,
+        "maxPriorityFeePerGas": null,
+        "to": "0x1111111111111111111111111111111111111111",
+        "value": "12345",
+        "data": "0x",
+        "accessList": []
+      },
+      "signPayload": "e801841dcd6500830493e0941111111111111111111111111111111111111111823039808209dd8080",
+      "signHash": "3cca2c40697e9c772dafb73258489d592a31b94d6819c09d52d1b4d089da22e1",
+      "signature": {
+        "r": "ab8044ec36298a65b310efd127bb2374c3a0b6c2de986a8cccbe8591d89e59c6",
+        "s": "2ad8344e7acdb4f403b14058b9e61455f54b8f5d475313c7ef80939bb3ac05c0",
+        "vNormalised": "28",
+        "yParity": 1,
+        "onWireV": "5086"
+      },
+      "signedSerialized": "f86801841dcd6500830493e0941111111111111111111111111111111111111111823039808213dea0ab8044ec36298a65b310efd127bb2374c3a0b6c2de986a8cccbe8591d89e59c6a02ad8344e7acdb4f403b14058b9e61455f54b8f5d475313c7ef80939bb3ac05c0",
+      "txHash": "f41f5e3b1c126d2c0b27c571efef581c796ceef87fb61e77a48f26828cbe6241"
+    },
+    {
+      "name": "eip1559_transfer",
+      "note": "The modern default. Fee fields are two separate caps, and the payload is type-prefixed.",
+      "signerPath": "m/44'/60'/0'/0/0",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      "tx": {
+        "type": 2,
+        "chainId": "1",
+        "nonce": "42",
+        "gasLimit": "21000",
+        "gasPrice": null,
+        "maxFeePerGas": "30000000000",
+        "maxPriorityFeePerGas": "1500000000",
+        "to": "0x3535353535353535353535353535353535353535",
+        "value": "500000000000000000",
+        "data": "0x",
+        "accessList": []
+      },
+      "signPayload": "02f0012a8459682f008506fc23ac008252089435353535353535353535353535353535353535358806f05b59d3b2000080c0",
+      "signHash": "994fdb09dd60a8ee0b74b872b213f946a470827dbe110cb6e3198891d1335d01",
+      "signature": {
+        "r": "125d70c3eeea44e9592730fe17010276c515fad099e152c8a6bb40ebcbe5fdb0",
+        "s": "43bb4ed86819c7f45bf147da22124733a8b63afe34dd692e8c793e55d34623f2",
+        "vNormalised": "28",
+        "yParity": 1,
+        "onWireV": "1"
+      },
+      "signedSerialized": "02f873012a8459682f008506fc23ac008252089435353535353535353535353535353535353535358806f05b59d3b2000080c001a0125d70c3eeea44e9592730fe17010276c515fad099e152c8a6bb40ebcbe5fdb0a043bb4ed86819c7f45bf147da22124733a8b63afe34dd692e8c793e55d34623f2",
+      "txHash": "4e19dce03ceae76a671d310676130796ac7c056c79a88aeff3be0a3468a4d740"
+    },
+    {
+      "name": "eip1559_zero_priority_fee",
+      "note": "A zero fee cap is a legitimate value and must encode as an empty string, not 0x00.",
+      "signerPath": "m/44'/60'/0'/0/0",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      "tx": {
+        "type": 2,
+        "chainId": "137",
+        "nonce": "0",
+        "gasLimit": "21000",
+        "gasPrice": null,
+        "maxFeePerGas": "1",
+        "maxPriorityFeePerGas": "0",
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "1",
+        "data": "0x",
+        "accessList": []
+      },
+      "signPayload": "02e081898080018252089400000000000000000000000000000000000000010180c0",
+      "signHash": "9d7e5c8a121215fef360b5920a16b9bab52e265b6545201723afb9b463d852f6",
+      "signature": {
+        "r": "536ef5bd1141091f618dd614d09ed89aeddb473e155ef7568a46b90059bdc053",
+        "s": "68741334aa92dd3116198db0bdd1f3fe771bf3dfbf97ea86c22149c923c146c6",
+        "vNormalised": "27",
+        "yParity": 0,
+        "onWireV": "0"
+      },
+      "signedSerialized": "02f86381898080018252089400000000000000000000000000000000000000010180c080a0536ef5bd1141091f618dd614d09ed89aeddb473e155ef7568a46b90059bdc053a068741334aa92dd3116198db0bdd1f3fe771bf3dfbf97ea86c22149c923c146c6",
+      "txHash": "1a57d5ee2c86ee22c3defd4dc989e8c69d290df9794582f8949ca82c7c654e83"
+    },
+    {
+      "name": "eip1559_with_access_list",
+      "note": "A populated access list, so the nested list encoding is exercised rather than skipped.",
+      "signerPath": "m/44'/60'/0'/0/0",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      "tx": {
+        "type": 2,
+        "chainId": "1",
+        "nonce": "7",
+        "gasLimit": "200000",
+        "gasPrice": null,
+        "maxFeePerGas": "50000000000",
+        "maxPriorityFeePerGas": "2000000000",
+        "to": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+        "value": "0",
+        "data": "0x70a08231",
+        "accessList": [
+          {
+            "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+            "storageKeys": [
+              "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "0x0000000000000000000000000000000000000000000000000000000000000001"
+            ]
+          },
+          {
+            "address": "0x3535353535353535353535353535353535353535",
+            "storageKeys": []
+          }
+        ]
+      },
+      "signPayload": "02f8a001078477359400850ba43b740083030d4094dac17f958d2ee523a2206206994597c13d831ec7808470a08231f872f85994dac17f958d2ee523a2206206994597c13d831ec7f842a00000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000001d6943535353535353535353535353535353535353535c0",
+      "signHash": "ae80e4ce6e4197e92bc8a57c88d018e98deb6d8cb48727ff4c089671ec1b29b5",
+      "signature": {
+        "r": "bd2fb0cea5d01a0fc2cb4a98f24bf54d288d879dafc6d06db8c4630713e0a111",
+        "s": "7773cca90a06efbae8ab4ac397b1feaec565e7a07791a9ed032b34b77a39ee08",
+        "vNormalised": "27",
+        "yParity": 0,
+        "onWireV": "0"
+      },
+      "signedSerialized": "02f8e301078477359400850ba43b740083030d4094dac17f958d2ee523a2206206994597c13d831ec7808470a08231f872f85994dac17f958d2ee523a2206206994597c13d831ec7f842a00000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000001d6943535353535353535353535353535353535353535c080a0bd2fb0cea5d01a0fc2cb4a98f24bf54d288d879dafc6d06db8c4630713e0a111a07773cca90a06efbae8ab4ac397b1feaec565e7a07791a9ed032b34b77a39ee08",
+      "txHash": "7c5bd527ef68cd14efc4de99514c190ef3a63922ce5837481217e10ade32fae5"
+    },
+    {
+      "name": "eip2930_access_list_type",
+      "note": "Type 1. Rarely used in the wild, but a dApp can still request one and we must not misencode it.",
+      "signerPath": "m/44'/60'/0'/0/0",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      "tx": {
+        "type": 1,
+        "chainId": "1",
+        "nonce": "2",
+        "gasLimit": "150000",
+        "gasPrice": "15000000000",
+        "maxFeePerGas": null,
+        "maxPriorityFeePerGas": null,
+        "to": "0x1111111111111111111111111111111111111111",
+        "value": "0",
+        "data": "0xdeadbeef",
+        "accessList": [
+          {
+            "address": "0x1111111111111111111111111111111111111111",
+            "storageKeys": [
+              "0x00000000000000000000000000000000000000000000000000000000000000ff"
+            ]
+          }
+        ]
+      },
+      "signPayload": "01f861010285037e11d600830249f09411111111111111111111111111111111111111118084deadbeeff838f7941111111111111111111111111111111111111111e1a000000000000000000000000000000000000000000000000000000000000000ff",
+      "signHash": "2b3b7b410cd1ace6a48f0f7ee48b1afb90646857f498ab1a02b54744a9c2f9ea",
+      "signature": {
+        "r": "feead9ba1c71673ea14788bcfc2c8beda68f33b4911c8f18b20ae57b908af83f",
+        "s": "3d04c63e3be4d1b043f9713efeb9ab7fe8788323b7227b71adb59fc594206c7d",
+        "vNormalised": "28",
+        "yParity": 1,
+        "onWireV": "1"
+      },
+      "signedSerialized": "01f8a4010285037e11d600830249f09411111111111111111111111111111111111111118084deadbeeff838f7941111111111111111111111111111111111111111e1a000000000000000000000000000000000000000000000000000000000000000ff01a0feead9ba1c71673ea14788bcfc2c8beda68f33b4911c8f18b20ae57b908af83fa03d04c63e3be4d1b043f9713efeb9ab7fe8788323b7227b71adb59fc594206c7d",
+      "txHash": "345721892bd465313d7644d4ea12f65d30da5dbdbd2bd1c98168434b3b6bbdd6"
+    }
+  ],
+  "messages": [
+    {
+      "name": "ascii",
+      "message": "Hello, Zunia",
+      "messageUtf8Hex": "48656c6c6f2c205a756e6961",
+      "byteLength": 12,
+      "payload": "19457468657265756d205369676e6564204d6573736167653a0a313248656c6c6f2c205a756e6961",
+      "hash": "3824ee8d8360c8c95bf5b92033a725c4843c1fa549a59a30e4b3097fce187a0e",
+      "hashOfPayload": "3824ee8d8360c8c95bf5b92033a725c4843c1fa549a59a30e4b3097fce187a0e",
+      "signature": "04d0ed38c339465d6d638a6acc89dd82278452334c80a79deda833d38801e66d08e74dacfb3cedb62955b3105872e3840664b269aac97943d4ef1b8ea865628a1c",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "empty",
+      "message": "",
+      "messageUtf8Hex": "",
+      "byteLength": 0,
+      "payload": "19457468657265756d205369676e6564204d6573736167653a0a30",
+      "hash": "5f35dce98ba4fba25530a026ed80b2cecdaa31091ba4958b99b52ea1d068adad",
+      "hashOfPayload": "5f35dce98ba4fba25530a026ed80b2cecdaa31091ba4958b99b52ea1d068adad",
+      "signature": "195c2781d9d0611afba721326ff367703626865825ef108cc19da092d14d48bb15ffba03245302210654019fd45cf1378e15474689c2d2aee77ae080266044101b",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "siwe",
+      "message": "app.zuniawallet.com wants you to sign in with your Ethereum account:\n0x9858EfFD232B4033E47d90003D41EC34EcaEda94\n\nURI: https://app.zuniawallet.com\nVersion: 1\nChain ID: 1\nNonce: 32891756\nIssued At: 2026-08-31T12:00:00.000Z",
+      "messageUtf8Hex": "6170702e7a756e696177616c6c65742e636f6d2077616e747320796f7520746f207369676e20696e207769746820796f757220457468657265756d206163636f756e743a0a3078393835384566464432333242343033334534376439303030334434314543333445636145646139340a0a5552493a2068747470733a2f2f6170702e7a756e696177616c6c65742e636f6d0a56657273696f6e3a20310a436861696e2049443a20310a4e6f6e63653a2033323839313735360a4973737565642041743a20323032362d30382d33315431323a30303a30302e3030305a",
+      "byteLength": 220,
+      "payload": "19457468657265756d205369676e6564204d6573736167653a0a3232306170702e7a756e696177616c6c65742e636f6d2077616e747320796f7520746f207369676e20696e207769746820796f757220457468657265756d206163636f756e743a0a3078393835384566464432333242343033334534376439303030334434314543333445636145646139340a0a5552493a2068747470733a2f2f6170702e7a756e696177616c6c65742e636f6d0a56657273696f6e3a20310a436861696e2049443a20310a4e6f6e63653a2033323839313735360a4973737565642041743a20323032362d30382d33315431323a30303a30302e3030305a",
+      "hash": "2824a7b50bf18daa770fc39b5a9e3dc1c734d558ac3f0646bf2bc0c0d25f2e9d",
+      "hashOfPayload": "2824a7b50bf18daa770fc39b5a9e3dc1c734d558ac3f0646bf2bc0c0d25f2e9d",
+      "signature": "864b6a836840a5b52ea8afc9895173366a0ca0ac70c805957a04b8a9ef2ded751d8176c926a6d9acb0bc752eccda7c3b1b85c3cf07f2bc4beb4474be7c48ca8c1c",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "unicode",
+      "message": "Zunia éè 你好 🚀",
+      "messageUtf8Hex": "5a756e696120c3a9c3a820e4bda0e5a5bd20f09f9a80",
+      "byteLength": 22,
+      "payload": "19457468657265756d205369676e6564204d6573736167653a0a32325a756e696120c3a9c3a820e4bda0e5a5bd20f09f9a80",
+      "hash": "6881c65ab64fe2f70984a53adb0b25f64a6f8d229d7348b4be9a84c7a7e27c5c",
+      "hashOfPayload": "6881c65ab64fe2f70984a53adb0b25f64a6f8d229d7348b4be9a84c7a7e27c5c",
+      "signature": "a239090f0614541f64c6ead5faa4fe55ad758cea346a213840b10d3106aa12774a4de8e57d142912acfcc792bd9389f7cdb3092739388bcdb65cfa95ff9b0de41b",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "length_boundary_9",
+      "message": "123456789",
+      "messageUtf8Hex": "313233343536373839",
+      "byteLength": 9,
+      "payload": "19457468657265756d205369676e6564204d6573736167653a0a39313233343536373839",
+      "hash": "5e275fae17e242926c01a96878c42e32848ab37e3bcdda430bb9f501e2f8051a",
+      "hashOfPayload": "5e275fae17e242926c01a96878c42e32848ab37e3bcdda430bb9f501e2f8051a",
+      "signature": "bd0f7caf3a706f8a5ab0660e33468374650ba768609f3592d7735e94804eb8d35202625e157b737cc308e732c5c806dab328de223f5f88bbc45c417f347fa6981b",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "length_boundary_10",
+      "message": "1234567890",
+      "messageUtf8Hex": "31323334353637383930",
+      "byteLength": 10,
+      "payload": "19457468657265756d205369676e6564204d6573736167653a0a313031323334353637383930",
+      "hash": "9a35ecfdc7084bef44284c01666b2cb83e83e399db140f387883dfe61fea42dd",
+      "hashOfPayload": "9a35ecfdc7084bef44284c01666b2cb83e83e399db140f387883dfe61fea42dd",
+      "signature": "d10243a502a286854c079ed2c5383fd82824a4d04f0cc85908df4caa96492adb0a920e12330beb13aa4c8d8b0abcf58dc97049511b3355bec70c4677d559fea01c",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "length_boundary_100",
+      "message": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "messageUtf8Hex": "61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "byteLength": 100,
+      "payload": "19457468657265756d205369676e6564204d6573736167653a0a31303061616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "hash": "90b496d4433ae2fe10bba2f73ca6a210a57d8499db0ae5dfb05f3fbeeff2b0cf",
+      "hashOfPayload": "90b496d4433ae2fe10bba2f73ca6a210a57d8499db0ae5dfb05f3fbeeff2b0cf",
+      "signature": "acab2028070b3d943c2676df359304b7f7c91bb8d65c3df3496375f9d3d7935f7368d3e172ea103e7d71f28078193cb67c54e5c15070a5988cb16fb1c7cffd5a1c",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "hex_looking_text",
+      "message": "0xdeadbeef",
+      "messageUtf8Hex": "30786465616462656566",
+      "byteLength": 10,
+      "payload": "19457468657265756d205369676e6564204d6573736167653a0a313030786465616462656566",
+      "hash": "efedd0a9a0294228c3977d7fbb68c7d40279f8b408cf3e24ef1823b179709e58",
+      "hashOfPayload": "efedd0a9a0294228c3977d7fbb68c7d40279f8b408cf3e24ef1823b179709e58",
+      "signature": "d03dbb6dc6f1f05f925b68e5b95532be7f89a12419fac82e6ddb36fb666adb61205bf683b2777d44e120d288d654e01c44734c8556b148c8d35a10f8898fdda31c",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    }
+  ],
+  "typedData": [
+    {
+      "name": "spec_mail_example",
+      "note": "The example from the EIP-712 specification itself, so the published intermediate hashes apply.",
+      "payload": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Person": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "wallet",
+              "type": "address"
+            }
+          ],
+          "Mail": [
+            {
+              "name": "from",
+              "type": "Person"
+            },
+            {
+              "name": "to",
+              "type": "Person"
+            },
+            {
+              "name": "contents",
+              "type": "string"
+            }
+          ]
+        },
+        "primaryType": "Mail",
+        "domain": {
+          "name": "Ether Mail",
+          "version": "1",
+          "chainId": 1,
+          "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+        },
+        "message": {
+          "from": {
+            "name": "Cow",
+            "wallet": "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
+          },
+          "to": {
+            "name": "Bob",
+            "wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+          },
+          "contents": "Hello, Bob!"
+        }
+      },
+      "primaryType": "Mail",
+      "encodeType": "Mail(Person from,Person to,string contents)Person(string name,address wallet)",
+      "typeHash": "a0cedeb2dc280ba39b857546d74f5549c3a1d7bdc2dd96bf881f76108e23dac2",
+      "domainSeparator": "f2cee375fa42b42143804025fc449deafd50cc031ca257e0b194a650a912090f",
+      "hashStruct": "c52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e",
+      "typeHashAndEncodedData": "a0cedeb2dc280ba39b857546d74f5549c3a1d7bdc2dd96bf881f76108e23dac2fc71e5fa27ff56c350aa531bc129ebdf613b772b6604664f5d8dbe21b85eb0c8cd54f074a4af31b4411ff6a60c9719dbd559c221c8ac3492d9d872b041d703d1b5aadf3154a261abdd9086fc627b61efca26ae5702701d05cd2305f7c52a2fc8",
+      "signingHash": "be609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2",
+      "signature": "5b9ee7ebad3acd6ca243732900203a8a9e59b871345cb9b229a1936e11f5ad8967c46a0d05027ccd880bcc49e18877a53b8e4813558a1fd165ebb875c4a447c21c",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "permit",
+      "note": "ERC-2612 permit. The single most-signed typed payload in the ecosystem, and an unlimited value here is a drain.",
+      "payload": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Permit": [
+            {
+              "name": "owner",
+              "type": "address"
+            },
+            {
+              "name": "spender",
+              "type": "address"
+            },
+            {
+              "name": "value",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint256"
+            }
+          ]
+        },
+        "primaryType": "Permit",
+        "domain": {
+          "name": "USD Coin",
+          "version": "2",
+          "chainId": 1,
+          "verifyingContract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        },
+        "message": {
+          "owner": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+          "spender": "0x1111111254EEB25477B68fb85Ed929f73A960582",
+          "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "nonce": "0",
+          "deadline": "1893456000"
+        }
+      },
+      "primaryType": "Permit",
+      "encodeType": "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)",
+      "typeHash": "6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9",
+      "domainSeparator": "06c37168a7db5138defc7866392bb87a741f9b3d104deb5094588ce041cae335",
+      "hashStruct": "d9ff0260ec2b18f5825f199bd08f37e0426e5cc796baebbc46f386452eb99d90",
+      "typeHashAndEncodedData": "6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c90000000000000000000000009858effd232b4033e47d90003d41ec34ecaeda940000000000000000000000001111111254eeb25477b68fb85ed929f73a960582ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000070dbd880",
+      "signingHash": "60d0518aebf0be6127f8cbd00bf9e89c9ebaab07d380aaf06d37dd2ad9508ec3",
+      "signature": "eddb85cc40cb2de511089ec982972578425966d272ab3f348363a480548c5a0864e5a0d3273e4dc85f58e66d541e5056c5ff44cd2ed35f4d853b93062fe296881c",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "arrays_and_nesting",
+      "note": "Dynamic arrays hash element-wise then hash the concatenation. Nested structs recurse. Both are easy to get subtly wrong.",
+      "payload": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            },
+            {
+              "name": "salt",
+              "type": "bytes32"
+            }
+          ],
+          "Item": [
+            {
+              "name": "id",
+              "type": "uint256"
+            },
+            {
+              "name": "tags",
+              "type": "string[]"
+            }
+          ],
+          "Order": [
+            {
+              "name": "items",
+              "type": "Item[]"
+            },
+            {
+              "name": "recipients",
+              "type": "address[]"
+            },
+            {
+              "name": "note",
+              "type": "bytes"
+            },
+            {
+              "name": "flag",
+              "type": "bool"
+            },
+            {
+              "name": "small",
+              "type": "int8"
+            }
+          ]
+        },
+        "primaryType": "Order",
+        "domain": {
+          "name": "Zunia",
+          "version": "1",
+          "chainId": 1,
+          "verifyingContract": "0x0000000000000000000000000000000000000001",
+          "salt": "0x0000000000000000000000000000000000000000000000000000000000000042"
+        },
+        "message": {
+          "items": [
+            {
+              "id": "1",
+              "tags": [
+                "a",
+                "bb"
+              ]
+            },
+            {
+              "id": "2",
+              "tags": []
+            }
+          ],
+          "recipients": [
+            "0x3535353535353535353535353535353535353535",
+            "0x0000000000000000000000000000000000000000"
+          ],
+          "note": "0xc0ffee",
+          "flag": true,
+          "small": "-5"
+        }
+      },
+      "primaryType": "Order",
+      "encodeType": "Order(Item[] items,address[] recipients,bytes note,bool flag,int8 small)Item(uint256 id,string[] tags)",
+      "typeHash": "0b231227e0bf5c254fdb60ee48b7b6405ff2fe1b5ba825bbf6d8e3b330a7eabd",
+      "domainSeparator": "25e08fc059defedb4eca7372028fa48a9a75d1779c3efb79df9582b80ad8bfc4",
+      "hashStruct": "ba33524d1223a2e3939b50e95dce919ca4a1829c78d10d22bf3f855268a977c1",
+      "typeHashAndEncodedData": "0b231227e0bf5c254fdb60ee48b7b6405ff2fe1b5ba825bbf6d8e3b330a7eabd02a1087be92f092c8982588f8db44cf857301caf611c09769db89279139bf46671c5e89e2ebe0be56d90218f1c73116f6d46d611574f6d7b5655763dfb62357e7924f890e12acdf516d6278e342cd34550e3bafe0a3dec1b9c2c3e991733711a0000000000000000000000000000000000000000000000000000000000000001fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb",
+      "signingHash": "02b1a89c1101a9d539c445d54c3fd2daff083f60df9a926c681e51e4097b5a83",
+      "signature": "fb2138b86420f4267a3437f3034eafdb55d5df1f01fbca47f860f634213a16102a9c041d7437de8ecf1634bc78b56e59d7508653fd17b8a781214acefc5070801c",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "fixed_bytes_and_negative_ints",
+      "note": "bytes32 is padded right, ints are two's complement padded left. Opposite directions, so a shared code path is a bug.",
+      "payload": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Sample": [
+            {
+              "name": "hash",
+              "type": "bytes32"
+            },
+            {
+              "name": "short",
+              "type": "bytes4"
+            },
+            {
+              "name": "negative",
+              "type": "int256"
+            },
+            {
+              "name": "positive",
+              "type": "int256"
+            },
+            {
+              "name": "big",
+              "type": "uint128"
+            }
+          ]
+        },
+        "primaryType": "Sample",
+        "domain": {
+          "name": "Zunia",
+          "version": "1",
+          "chainId": 42161,
+          "verifyingContract": "0x0000000000000000000000000000000000000002"
+        },
+        "message": {
+          "hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "short": "0xdeadbeef",
+          "negative": "-1",
+          "positive": "1",
+          "big": "340282366920938463463374607431768211455"
+        }
+      },
+      "primaryType": "Sample",
+      "encodeType": "Sample(bytes32 hash,bytes4 short,int256 negative,int256 positive,uint128 big)",
+      "typeHash": "dabbb499329b19606724ddf37aed7d3e5e117162e2922dafd7836a7a70479b1f",
+      "domainSeparator": "e83bfae9e797a579af3fb7866cf74322ddda362e129892689aa9c9b96315f2d6",
+      "hashStruct": "10d4d43452df2c567662ae5de75a422a49fb2d0f3fe183ae87128335c1a4cf57",
+      "typeHashAndEncodedData": "dabbb499329b19606724ddf37aed7d3e5e117162e2922dafd7836a7a70479b1f1111111111111111111111111111111111111111111111111111111111111111deadbeef00000000000000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000ffffffffffffffffffffffffffffffff",
+      "signingHash": "c14d0f252a03b336e6988eec1ff6650e8171bd85f3d3b82556d49c27876c39d6",
+      "signature": "38851e765403088f8f923d2f7c2e449b934fac5218b4f5856bfe9b72d513e922761e63d2fc259a9227d577411a5dbd231854a474298623c312a04670010ba42e1b",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "minimal_domain",
+      "note": "A domain with only a name. Absent fields are omitted from EIP712Domain entirely, not zero-filled.",
+      "payload": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "Ping": [
+            {
+              "name": "nonce",
+              "type": "uint256"
+            }
+          ]
+        },
+        "primaryType": "Ping",
+        "domain": {
+          "name": "Zunia"
+        },
+        "message": {
+          "nonce": "1"
+        }
+      },
+      "primaryType": "Ping",
+      "encodeType": "Ping(uint256 nonce)",
+      "typeHash": "bba87f3457cdd93f493f61a6b107e5a4e0e7f0e6068c69bdc2053886faf30f43",
+      "domainSeparator": "ed1be37cd1daa080a074384e06b94b4d67994f2846f492b5f5921d0a5653dbe4",
+      "hashStruct": "cb5eb5cf7c11e3f3963919cd00327d076730dbd307bf1041733f5514a82e9278",
+      "typeHashAndEncodedData": "bba87f3457cdd93f493f61a6b107e5a4e0e7f0e6068c69bdc2053886faf30f430000000000000000000000000000000000000000000000000000000000000001",
+      "signingHash": "c9614b706cc1f92d673989bbdbdb358df80069138cd7a12b6bef8814595b1a13",
+      "signature": "c56984298fbdacf6d23497a738c7ebc09d72a4e5e6e84d9f6c8aa1ed947f2788665b2b91024638d7c58d497e1e10d71de94b4e932be57ed230f7732262902e7a1c",
+      "signerAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    }
+  ],
+  "recovery": [
+    {
+      "name": "ascii",
+      "hash": "3824ee8d8360c8c95bf5b92033a725c4843c1fa549a59a30e4b3097fce187a0e",
+      "r": "04d0ed38c339465d6d638a6acc89dd82278452334c80a79deda833d38801e66d",
+      "s": "08e74dacfb3cedb62955b3105872e3840664b269aac97943d4ef1b8ea865628a",
+      "v": 28,
+      "yParity": 1,
+      "sIsLow": true,
+      "recoveredAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "empty",
+      "hash": "5f35dce98ba4fba25530a026ed80b2cecdaa31091ba4958b99b52ea1d068adad",
+      "r": "195c2781d9d0611afba721326ff367703626865825ef108cc19da092d14d48bb",
+      "s": "15ffba03245302210654019fd45cf1378e15474689c2d2aee77ae08026604410",
+      "v": 27,
+      "yParity": 0,
+      "sIsLow": true,
+      "recoveredAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "siwe",
+      "hash": "2824a7b50bf18daa770fc39b5a9e3dc1c734d558ac3f0646bf2bc0c0d25f2e9d",
+      "r": "864b6a836840a5b52ea8afc9895173366a0ca0ac70c805957a04b8a9ef2ded75",
+      "s": "1d8176c926a6d9acb0bc752eccda7c3b1b85c3cf07f2bc4beb4474be7c48ca8c",
+      "v": 28,
+      "yParity": 1,
+      "sIsLow": true,
+      "recoveredAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "unicode",
+      "hash": "6881c65ab64fe2f70984a53adb0b25f64a6f8d229d7348b4be9a84c7a7e27c5c",
+      "r": "a239090f0614541f64c6ead5faa4fe55ad758cea346a213840b10d3106aa1277",
+      "s": "4a4de8e57d142912acfcc792bd9389f7cdb3092739388bcdb65cfa95ff9b0de4",
+      "v": 27,
+      "yParity": 0,
+      "sIsLow": true,
+      "recoveredAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "length_boundary_9",
+      "hash": "5e275fae17e242926c01a96878c42e32848ab37e3bcdda430bb9f501e2f8051a",
+      "r": "bd0f7caf3a706f8a5ab0660e33468374650ba768609f3592d7735e94804eb8d3",
+      "s": "5202625e157b737cc308e732c5c806dab328de223f5f88bbc45c417f347fa698",
+      "v": 27,
+      "yParity": 0,
+      "sIsLow": true,
+      "recoveredAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "length_boundary_10",
+      "hash": "9a35ecfdc7084bef44284c01666b2cb83e83e399db140f387883dfe61fea42dd",
+      "r": "d10243a502a286854c079ed2c5383fd82824a4d04f0cc85908df4caa96492adb",
+      "s": "0a920e12330beb13aa4c8d8b0abcf58dc97049511b3355bec70c4677d559fea0",
+      "v": 28,
+      "yParity": 1,
+      "sIsLow": true,
+      "recoveredAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "length_boundary_100",
+      "hash": "90b496d4433ae2fe10bba2f73ca6a210a57d8499db0ae5dfb05f3fbeeff2b0cf",
+      "r": "acab2028070b3d943c2676df359304b7f7c91bb8d65c3df3496375f9d3d7935f",
+      "s": "7368d3e172ea103e7d71f28078193cb67c54e5c15070a5988cb16fb1c7cffd5a",
+      "v": 28,
+      "yParity": 1,
+      "sIsLow": true,
+      "recoveredAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    },
+    {
+      "name": "hex_looking_text",
+      "hash": "efedd0a9a0294228c3977d7fbb68c7d40279f8b408cf3e24ef1823b179709e58",
+      "r": "d03dbb6dc6f1f05f925b68e5b95532be7f89a12419fac82e6ddb36fb666adb61",
+      "s": "205bf683b2777d44e120d288d654e01c44734c8556b148c8d35a10f8898fdda3",
+      "v": 28,
+      "yParity": 1,
+      "sIsLow": true,
+      "recoveredAddress": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+    }
+  ]
+}

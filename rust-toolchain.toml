@@ -1,0 +1,12 @@
+# Pinned so every developer and every CI runner compiles the crypto path with the same
+# compiler. A toolchain bump is a reviewed change.
+#
+# Mobile targets (aarch64-apple-ios, aarch64-apple-ios-sim, aarch64-linux-android,
+# armv7-linux-androideabi, x86_64-linux-android) are installed by the release workflow rather
+# than listed here, because rustup would otherwise download all of them on the first local
+# `cargo test`.
+[toolchain]
+channel = "1.93.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

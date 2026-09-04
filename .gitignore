@@ -6,3 +6,19 @@ dist
 .env.local
 *.log
 .DS_Store
+
+# Rust
+target/
+fuzz/target/
+
+# Fuzzing crash artifacts are findings, not build output: they are reviewed and then promoted
+# into fuzz/corpus/ with a regression test, rather than committed from here.
+fuzz/artifacts/
+
+# The CI registry checkout.
+.registry/
+
+# Generated publish directories (rebuilt by scripts/build-*.sh).
+packages/npm/*
+!packages/npm/.gitkeep
+dist/native/

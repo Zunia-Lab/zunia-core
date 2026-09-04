@@ -1,0 +1,19 @@
+[package]
+name = "zunia-evm"
+description = "Ethereum transaction encoding and signing: EIP-155, EIP-1559, EIP-191 and EIP-712"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+zunia-kernel.workspace = true
+sha3.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json = { workspace = true }

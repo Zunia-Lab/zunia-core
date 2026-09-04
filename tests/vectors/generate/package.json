@@ -1,0 +1,30 @@
+{
+  "name": "zunia-core-vector-generator",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "description": "Generates golden signing vectors with CosmJS, ethers and @solana/web3.js so the Rust kernel can be asserted byte for byte against the reference implementations (ADR-0004).",
+  "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "generate:addresses": "node address-vectors.mjs",
+    "generate:evm": "node evm-vectors.mjs",
+    "generate:svm": "node svm-vectors.mjs",
+    "generate:all": "node generate.mjs && node address-vectors.mjs && node evm-vectors.mjs && node svm-vectors.mjs"
+  },
+  "dependencies": {
+    "@cosmjs/amino": "^0.33.0",
+    "@cosmjs/crypto": "^0.33.0",
+    "@cosmjs/encoding": "^0.33.0",
+    "@cosmjs/proto-signing": "^0.33.0",
+    "@solana/web3.js": "^1",
+    "bip39": "^3",
+    "bs58": "^6",
+    "cosmjs-types": "^0.9.0",
+    "ed25519-hd-key": "^1",
+    "ethers": "^6"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

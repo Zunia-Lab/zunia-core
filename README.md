@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Zunia-Lab/zunia-brand/main/png/icons/app/zunia-icon-256.png" alt="Zunia" width="96" />
+</p>
+
 # zunia-core
 
 > Shared wallet kernel for Zunia (keys, derivation, encryption, signing, tx builders).

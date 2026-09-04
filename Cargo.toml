@@ -1,0 +1,116 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/kernel",
+    "crates/registry",
+    "crates/cosmos",
+    "crates/evm",
+    "crates/svm",
+    "crates/wasm",
+    "crates/ffi",
+    "crates/properties",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "Apache-2.0"
+repository = "https://github.com/Zunia-Lab/zunia-core"
+authors = ["Zunia Lab"]
+
+# Dependency budget is deliberately small and pinned. Every crate here is on the crypto path,
+# so an addition is an ADR-level decision, not a convenience. See
+# docs/adr/0002-wallet-kernel-language.md.
+[workspace.dependencies]
+# Hashing
+sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
+ripemd = { version = "0.1", default-features = false }
+hmac = { version = "0.12", default-features = false }
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+
+# Curves. k256 is pure Rust so WASM and native share exactly one secp256k1 code path.
+# The tradeoff versus libsecp256k1 is recorded in ADR-0002.
+k256 = { version = "0.13", default-features = false, features = [
+    "ecdsa",
+    "arithmetic",
+    "sha256",
+    "std",
+] }
+ed25519-dalek = { version = "2.1", default-features = false, features = [
+    "std",
+    "zeroize",
+    "rand_core",
+] }
+curve25519-dalek = { version = "4.1", default-features = false }
+
+# BIP-39. Never hand-roll the wordlist or the checksum: the rust-bitcoin implementation is
+# widely reviewed and ships the official wordlists.
+bip39 = { version = "2.1", default-features = false, features = ["std", "zeroize"] }
+
+# Encodings
+bech32 = { version = "0.11", default-features = false, features = ["alloc"] }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+bs58 = { version = "0.5", default-features = false, features = ["alloc"] }
+
+# Symmetric crypto for the keyring envelope
+argon2 = { version = "0.5", default-features = false, features = [
+    "alloc",
+    "password-hash",
+] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = [
+    "alloc",
+    "getrandom",
+] }
+aes-gcm = { version = "0.10", default-features = false, features = [
+    "alloc",
+    "aes",
+] }
+
+# Memory hygiene. Every type that holds secret bytes must zeroize on drop.
+zeroize = { version = "1.8", features = ["zeroize_derive", "alloc"] }
+subtle = { version = "2.6", default-features = false }
+
+# Randomness. On wasm32 this must resolve to crypto.getRandomValues, never a fallback.
+rand_core = { version = "0.6", default-features = false, features = ["getrandom"] }
+getrandom = { version = "0.2", default-features = false }
+
+# Serialisation. preserve_order matters: Amino JSON is order sensitive, and a HashMap-backed
+# JSON object would reorder keys and change the signed bytes.
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+# Protobuf for Cosmos transaction encoding. cosmos-sdk-proto ships pre-generated Rust, so
+# protoc is not a build requirement.
+prost = { version = "0.13", default-features = false, features = ["prost-derive"] }
+prost-types = { version = "0.13", default-features = false }
+
+# Errors
+thiserror = { version = "2", default-features = false }
+
+# Internal crates
+zunia-kernel = { path = "crates/kernel", version = "0.1.0" }
+zunia-registry = { path = "crates/registry", version = "0.1.0" }
+zunia-cosmos = { path = "crates/cosmos", version = "0.1.0" }
+zunia-evm = { path = "crates/evm", version = "0.1.0" }
+zunia-svm = { path = "crates/svm", version = "0.1.0" }
+zunia-properties = { path = "crates/properties", version = "0.1.0" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Tests and fuzz targets need debug assertions on the crypto paths.
+[profile.test]
+debug-assertions = true
+overflow-checks = true
+
+# WASM is size sensitive because the extension bundle ships it to every user.
+[profile.release-wasm]
+inherits = "release"
+opt-level = "z"

@@ -1,0 +1,1 @@
+{"types": {"EIP712Domain": [{"name": "name", "type": "string"}], "Permitt": [{"name": "owner", "type": "address"}]}, "primaryType": "Permit", "domain": {"name": "USD Coin"}, "message": {"owner": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"}}

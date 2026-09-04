@@ -1,0 +1,26 @@
+[package]
+name = "zunia-properties"
+description = "Shared property assertions for the parsers, used by both fuzz targets and corpus replay tests"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+# Mirrors the gate on zunia-svm so the Solana properties are only compiled when the Solana code
+# they assert about is.
+default = []
+solana = ["zunia-svm/solana"]
+
+[dependencies]
+zunia-kernel.workspace = true
+zunia-registry.workspace = true
+zunia-cosmos.workspace = true
+zunia-evm.workspace = true
+zunia-svm.workspace = true
+
+[dev-dependencies]
+hex.workspace = true

@@ -1,0 +1,162 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  wasm:
+    name: Build and publish @zunialab/core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        run: |
+          rustup show active-toolchain
+          rustup target add wasm32-unknown-unknown
+          rustup component add rustfmt clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install wasm-bindgen and wasm-opt
+        run: |
+          cargo install wasm-bindgen-cli --locked --version 0.2.100
+          sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Verify
+        env:
+          ZUNIA_CHAIN_REGISTRY: ${{ github.workspace }}/.registry
+        run: |
+          # Registry is optional for the release path itself; tests that need it skip.
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo test --workspace --all-features
+
+      - name: Build npm package
+        run: ./scripts/build-wasm.sh
+
+      - name: Publish @zunialab/core with provenance
+        working-directory: packages/npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          # Only publish when this is a version tag push or an explicit dispatch with publish=true.
+          # On ordinary main pushes the artifact is uploaded to the GitHub Release instead.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            npm publish --access public --provenance
+          else
+            echo "skipping npm publish on untagged main push"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zunialab-core-npm
+          path: packages/npm
+
+  native-android:
+    name: Native Android libs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+      - name: Build Android
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: ./scripts/build-native.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-android
+          path: dist/native/android-libs.tar.gz
+          if-no-files-found: warn
+
+  native-ios:
+    name: Native iOS xcframework
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: Build iOS
+        run: ./scripts/build-native.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-ios
+          path: |
+            dist/native/ZuniaCore.xcframework.tar.gz
+            dist/native/SHA256SUMS
+          if-no-files-found: warn
+
+  release:
+    name: GitHub Release and consumer dispatch
+    needs: [wasm, native-android, native-ios]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Sign and checksum
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -exec cp {} release/ \;
+          # The npm package as a tarball for offline verification.
+          if [[ -d artifacts/zunialab-core-npm ]]; then
+            tar -czf release/zunialab-core-npm.tar.gz -C artifacts/zunialab-core-npm .
+          fi
+          (cd release && shasum -a 256 * > SHA256SUMS)
+          # Detached signatures when a release signing key is configured.
+          if [[ -n "${{ secrets.RELEASE_GPG_PRIVATE_KEY }}" ]]; then
+            echo "${{ secrets.RELEASE_GPG_PRIVATE_KEY }}" | gpg --batch --import
+            (cd release && gpg --batch --yes --detach-sign --armor SHA256SUMS)
+          fi
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+
+      # ADR-0005: a kernel bump is a reviewed PR in each consumer, never an invisible update.
+      - name: Notify consumer repositories
+        env:
+          GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          for repo in zunia-extension zunia-mobile zunia-dashboard; do
+            gh api "repos/Zunia-Lab/$repo/dispatches" \
+              -f event_type=zunia-core-released \
+              -F "client_payload[version]=$VERSION" \
+              -F "client_payload[tag]=$GITHUB_REF_NAME" \
+              || echo "dispatch to $repo failed; open the bump PR by hand"
+          done

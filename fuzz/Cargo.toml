@@ -1,0 +1,65 @@
+[package]
+name = "zunia-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# Deliberately outside the main workspace. cargo-fuzz builds with a nightly toolchain and
+# passes sanitizer flags to every crate it compiles, and having that in the primary workspace
+# means `cargo test` starts pulling in libfuzzer.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# The property assertions are shared with the stable-toolchain corpus replay test, so a property
+# cannot drift between what the fuzzer checks and what CI checks.
+zunia-properties = { path = "../crates/properties", features = ["solana"] }
+
+[[bin]]
+name = "tx_decoder"
+path = "fuzz_targets/tx_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "registry_parser"
+path = "fuzz_targets/registry_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "address_parser"
+path = "fuzz_targets/address_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "keyring_envelope"
+path = "fuzz_targets/keyring_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "eip712_parser"
+path = "fuzz_targets/eip712_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "svm_message"
+path = "fuzz_targets/svm_message.rs"
+test = false
+doc = false
+bench = false
+
+# Fuzzing an unoptimised build wastes most of the CPU budget on the harness.
+[profile.release]
+debug = 1

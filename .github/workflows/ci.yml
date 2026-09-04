@@ -8,19 +8,142 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  build:
+  test:
+    name: Test and lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The sibling registry checkout, so the address vectors and the real-registry parse test
+      # run for real rather than skipping. A skip here would hide a regression affecting every
+      # chain the wallet offers.
+      - name: Check out zunia-chain-registry
+        uses: actions/checkout@v4
+        with:
+          repository: Zunia-Lab/zunia-chain-registry
+          path: .registry
+
+      # rust-toolchain.toml pins the version, so no toolchain is named here on purpose.
+      - name: Install Rust
+        run: |
+          rustup show active-toolchain
+          rustup component add rustfmt clippy
+          rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all -- --check
+
+      # Warnings are errors. This crate signs transactions, and an ignored-result warning here is
+      # the kind of thing that becomes a swallowed error on the crypto path.
+      #
+      # `--all-features` matters: Solana support is feature gated, so without it the whole of
+      # crates/svm compiles to nothing and its tests never run.
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test
+        env:
+          ZUNIA_CHAIN_REGISTRY: ${{ github.workspace }}/.registry
+        run: cargo test --workspace --all-features
+
+      # Also without the optional features, since that is what actually ships to the extension.
+      # A crate that only compiles with every feature enabled would break the release build.
+      - name: Test with default features
+        env:
+          ZUNIA_CHAIN_REGISTRY: ${{ github.workspace }}/.registry
+        run: cargo test --workspace
+
+      # A short mutation sweep over the parsers. Not a substitute for the scheduled fuzzing run,
+      # but it costs seconds, needs no nightly toolchain, and it is what found the two
+      # misrepresentation bugs recorded in fuzz/README.md. Unoptimised on purpose: the release
+      # profile aborts on panic, so findings could not be collected.
+      - name: Mutation sweep
+        env:
+          ZUNIA_CHAIN_REGISTRY: ${{ github.workspace }}/.registry
+        run: cargo run -p zunia-properties --features solana --example mutate -- '' 20000
+
+      # The kernel ships to the browser as WASM, so a target-specific break must fail here rather
+      # than during a release. zunia-ffi is native-only by design and zunia-properties is test
+      # infrastructure, so neither is expected to build for wasm32.
+      - name: Build for wasm32
+        run: |
+          cargo build --target wasm32-unknown-unknown \
+            -p zunia-kernel -p zunia-registry -p zunia-cosmos \
+            -p zunia-evm -p zunia-svm -p zunia-wasm
+
+  vectors:
+    name: Vectors are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Zunia-Lab/zunia-chain-registry
+          path: .registry
+
       - uses: pnpm/action-setup@v4
         with:
           version: 9
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
+          node-version: 22
+
+      # Regenerates the CosmJS-derived vectors and fails if they differ from what is committed.
+      #
+      # This is the check that stops the vectors becoming decorative. Without it, someone can
+      # change the generator and forget to regenerate: the Rust tests keep passing against stale
+      # expectations, and the byte-for-byte guarantee quietly stops meaning anything.
+      #
+      # The official BIP vectors are deliberately not regenerated here. They come from finalised
+      # specifications fetched over the network, so a failure caused by an upstream outage would
+      # only teach everyone to ignore this job. The keyring envelope fixture is excluded for the
+      # opposite reason: regenerating it is exactly what must not happen, since it exists to prove
+      # that a wallet sealed by an older build still opens.
+      - name: Regenerate the JavaScript-derived vectors
+        working-directory: tests/vectors/generate
+        env:
+          ZUNIA_CHAIN_REGISTRY: ${{ github.workspace }}/.registry
+        run: |
+          pnpm install --no-frozen-lockfile
+          node generate.mjs
+          node address-vectors.mjs
+          node evm-vectors.mjs
+          node svm-vectors.mjs
+
+      - name: Fail if the committed vectors are stale
+        run: |
+          if ! git diff --exit-code -- tests/vectors/; then
+            echo "::error::Committed vectors differ from freshly generated ones."
+            echo "Run 'pnpm vectors', review the diff, and commit it. A byte change means the"
+            echo "reference encoding moved, which needs a human to decide which side is right."
+            exit 1
+          fi
+
+  fuzz:
+    name: Fuzz targets build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustup show active-toolchain
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            fuzz
+
+      # Building the targets stops them rotting. The corpus replay, which is the part that
+      # catches regressions on crashes already found, runs on the stable toolchain as part of
+      # `cargo test --workspace` in the test job above.
+      #
+      # A real campaign needs nightly and a time budget measured in hours, so it lives in
+      # fuzz-nightly.yml on a schedule rather than blocking pull requests.
+      - name: Build fuzz targets
+        working-directory: fuzz
+        run: cargo build --bins

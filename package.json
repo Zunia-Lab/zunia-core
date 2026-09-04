@@ -2,29 +2,24 @@
   "name": "@zunialab/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Zunia wallet kernel — keys, signing, encryption (scaffold)",
+  "packageManager": "pnpm@9.15.0",
+  "description": "Zunia wallet kernel: keys, signing and encryption. The implementation is Rust (see crates/); this package exists to publish the WASM artifact under the npm name consumers already depend on.",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test tests/**/*.test.ts",
-    "lint": "echo \"lint: configure eslint when implementation starts\""
-  },
-  "devDependencies": {
-    "tsup": "^8.3.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "vectors:bip": "python3 tests/vectors/generate/bip-vectors.py",
+    "vectors:cosmos": "cd tests/vectors/generate && pnpm install && node generate.mjs",
+    "vectors:addresses": "cd tests/vectors/generate && pnpm install && node address-vectors.mjs",
+    "vectors:evm": "cd tests/vectors/generate && pnpm install && node evm-vectors.mjs",
+    "vectors:svm": "cd tests/vectors/generate && pnpm install && node svm-vectors.mjs",
+    "vectors": "pnpm vectors:bip && pnpm vectors:cosmos && pnpm vectors:addresses && pnpm vectors:evm && pnpm vectors:svm",
+    "build:wasm": "./scripts/build-wasm.sh",
+    "build:native": "./scripts/build-native.sh",
+    "test": "cargo test --workspace --all-features",
+    "lint": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "typecheck": "cargo fmt --all -- --check"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "license": "Apache-2.0"
 }

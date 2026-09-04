@@ -1,0 +1,435 @@
+{
+  "_comment": "Official BIP-39, BIP-32 and SLIP-0010 test vectors, fetched from their normative upstreams by tests/vectors/generate/bip-vectors.py. Do not edit by hand.",
+  "sources": {
+    "bip39": "https://raw.githubusercontent.com/trezor/python-mnemonic/master/vectors.json",
+    "bip32": "https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki",
+    "slip10": "https://raw.githubusercontent.com/satoshilabs/slips/master/slip-0010.md"
+  },
+  "bip39": {
+    "passphrase": "TREZOR",
+    "note": "The reference vectors all use the passphrase TREZOR.",
+    "cases": [
+      {
+        "entropy_hex": "00000000000000000000000000000000",
+        "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        "seed_hex": "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04",
+        "xprv": "xprv9s21ZrQH143K3h3fDYiay8mocZ3afhfULfb5GX8kCBdno77K4HiA15Tg23wpbeF1pLfs1c5SPmYHrEpTuuRhxMwvKDwqdKiGJS9XFKzUsAF"
+      },
+      {
+        "entropy_hex": "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+        "mnemonic": "legal winner thank year wave sausage worth useful legal winner thank yellow",
+        "seed_hex": "2e8905819b8723fe2c1d161860e5ee1830318dbf49a83bd451cfb8440c28bd6fa457fe1296106559a3c80937a1c1069be3a3a5bd381ee6260e8d9739fce1f607",
+        "xprv": "xprv9s21ZrQH143K2gA81bYFHqU68xz1cX2APaSq5tt6MFSLeXnCKV1RVUJt9FWNTbrrryem4ZckN8k4Ls1H6nwdvDTvnV7zEXs2HgPezuVccsq"
+      },
+      {
+        "entropy_hex": "80808080808080808080808080808080",
+        "mnemonic": "letter advice cage absurd amount doctor acoustic avoid letter advice cage above",
+        "seed_hex": "d71de856f81a8acc65e6fc851a38d4d7ec216fd0796d0a6827a3ad6ed5511a30fa280f12eb2e47ed2ac03b5c462a0358d18d69fe4f985ec81778c1b370b652a8",
+        "xprv": "xprv9s21ZrQH143K2shfP28KM3nr5Ap1SXjz8gc2rAqqMEynmjt6o1qboCDpxckqXavCwdnYds6yBHZGKHv7ef2eTXy461PXUjBFQg6PrwY4Gzq"
+      },
+      {
+        "entropy_hex": "ffffffffffffffffffffffffffffffff",
+        "mnemonic": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+        "seed_hex": "ac27495480225222079d7be181583751e86f571027b0497b5b5d11218e0a8a13332572917f0f8e5a589620c6f15b11c61dee327651a14c34e18231052e48c069",
+        "xprv": "xprv9s21ZrQH143K2V4oox4M8Zmhi2Fjx5XK4Lf7GKRvPSgydU3mjZuKGCTg7UPiBUD7ydVPvSLtg9hjp7MQTYsW67rZHAXeccqYqrsx8LcXnyd"
+      },
+      {
+        "entropy_hex": "000000000000000000000000000000000000000000000000",
+        "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon agent",
+        "seed_hex": "035895f2f481b1b0f01fcf8c289c794660b289981a78f8106447707fdd9666ca06da5a9a565181599b79f53b844d8a71dd9f439c52a3d7b3e8a79c906ac845fa",
+        "xprv": "xprv9s21ZrQH143K3mEDrypcZ2usWqFgzKB6jBBx9B6GfC7fu26X6hPRzVjzkqkPvDqp6g5eypdk6cyhGnBngbjeHTe4LsuLG1cCmKJka5SMkmU"
+      },
+      {
+        "entropy_hex": "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+        "mnemonic": "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal will",
+        "seed_hex": "f2b94508732bcbacbcc020faefecfc89feafa6649a5491b8c952cede496c214a0c7b3c392d168748f2d4a612bada0753b52a1c7ac53c1e93abd5c6320b9e95dd",
+        "xprv": "xprv9s21ZrQH143K3Lv9MZLj16np5GzLe7tDKQfVusBni7toqJGcnKRtHSxUwbKUyUWiwpK55g1DUSsw76TF1T93VT4gz4wt5RM23pkaQLnvBh7"
+      },
+      {
+        "entropy_hex": "808080808080808080808080808080808080808080808080",
+        "mnemonic": "letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter always",
+        "seed_hex": "107d7c02a5aa6f38c58083ff74f04c607c2d2c0ecc55501dadd72d025b751bc27fe913ffb796f841c49b1d33b610cf0e91d3aa239027f5e99fe4ce9e5088cd65",
+        "xprv": "xprv9s21ZrQH143K3VPCbxbUtpkh9pRG371UCLDz3BjceqP1jz7XZsQ5EnNkYAEkfeZp62cDNj13ZTEVG1TEro9sZ9grfRmcYWLBhCocViKEJae"
+      },
+      {
+        "entropy_hex": "ffffffffffffffffffffffffffffffffffffffffffffffff",
+        "mnemonic": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo when",
+        "seed_hex": "0cd6e5d827bb62eb8fc1e262254223817fd068a74b5b449cc2f667c3f1f985a76379b43348d952e2265b4cd129090758b3e3c2c49103b5051aac2eaeb890a528",
+        "xprv": "xprv9s21ZrQH143K36Ao5jHRVhFGDbLP6FCx8BEEmpru77ef3bmA928BxsqvVM27WnvvyfWywiFN8K6yToqMaGYfzS6Db1EHAXT5TuyCLBXUfdm"
+      },
+      {
+        "entropy_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+        "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art",
+        "seed_hex": "bda85446c68413707090a52022edd26a1c9462295029f2e60cd7c4f2bbd3097170af7a4d73245cafa9c3cca8d561a7c3de6f5d4a10be8ed2a5e608d68f92fcc8",
+        "xprv": "xprv9s21ZrQH143K32qBagUJAMU2LsHg3ka7jqMcV98Y7gVeVyNStwYS3U7yVVoDZ4btbRNf4h6ibWpY22iRmXq35qgLs79f312g2kj5539ebPM"
+      },
+      {
+        "entropy_hex": "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+        "mnemonic": "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title",
+        "seed_hex": "bc09fca1804f7e69da93c2f2028eb238c227f2e9dda30cd63699232578480a4021b146ad717fbb7e451ce9eb835f43620bf5c514db0f8add49f5d121449d3e87",
+        "xprv": "xprv9s21ZrQH143K3Y1sd2XVu9wtqxJRvybCfAetjUrMMco6r3v9qZTBeXiBZkS8JxWbcGJZyio8TrZtm6pkbzG8SYt1sxwNLh3Wx7to5pgiVFU"
+      },
+      {
+        "entropy_hex": "8080808080808080808080808080808080808080808080808080808080808080",
+        "mnemonic": "letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic bless",
+        "seed_hex": "c0c519bd0e91a2ed54357d9d1ebef6f5af218a153624cf4f2da911a0ed8f7a09e2ef61af0aca007096df430022f7a2b6fb91661a9589097069720d015e4e982f",
+        "xprv": "xprv9s21ZrQH143K3CSnQNYC3MqAAqHwxeTLhDbhF43A4ss4ciWNmCY9zQGvAKUSqVUf2vPHBTSE1rB2pg4avopqSiLVzXEU8KziNnVPauTqLRo"
+      },
+      {
+        "entropy_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "mnemonic": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote",
+        "seed_hex": "dd48c104698c30cfe2b6142103248622fb7bb0ff692eebb00089b32d22484e1613912f0a5b694407be899ffd31ed3992c456cdf60f5d4564b8ba3f05a69890ad",
+        "xprv": "xprv9s21ZrQH143K2WFF16X85T2QCpndrGwx6GueB72Zf3AHwHJaknRXNF37ZmDrtHrrLSHvbuRejXcnYxoZKvRquTPyp2JiNG3XcjQyzSEgqCB"
+      },
+      {
+        "entropy_hex": "9e885d952ad362caeb4efe34a8e91bd2",
+        "mnemonic": "ozone drill grab fiber curtain grace pudding thank cruise elder eight picnic",
+        "seed_hex": "274ddc525802f7c828d8ef7ddbcdc5304e87ac3535913611fbbfa986d0c9e5476c91689f9c8a54fd55bd38606aa6a8595ad213d4c9c9f9aca3fb217069a41028",
+        "xprv": "xprv9s21ZrQH143K2oZ9stBYpoaZ2ktHj7jLz7iMqpgg1En8kKFTXJHsjxry1JbKH19YrDTicVwKPehFKTbmaxgVEc5TpHdS1aYhB2s9aFJBeJH"
+      },
+      {
+        "entropy_hex": "6610b25967cdcca9d59875f5cb50b0ea75433311869e930b",
+        "mnemonic": "gravity machine north sort system female filter attitude volume fold club stay feature office ecology stable narrow fog",
+        "seed_hex": "628c3827a8823298ee685db84f55caa34b5cc195a778e52d45f59bcf75aba68e4d7590e101dc414bc1bbd5737666fbbef35d1f1903953b66624f910feef245ac",
+        "xprv": "xprv9s21ZrQH143K3uT8eQowUjsxrmsA9YUuQQK1RLqFufzybxD6DH6gPY7NjJ5G3EPHjsWDrs9iivSbmvjc9DQJbJGatfa9pv4MZ3wjr8qWPAK"
+      },
+      {
+        "entropy_hex": "68a79eaca2324873eacc50cb9c6eca8cc68ea5d936f98787c60c7ebc74e6ce7c",
+        "mnemonic": "hamster diagram private dutch cause delay private meat slide toddler razor book happy fancy gospel tennis maple dilemma loan word shrug inflict delay length",
+        "seed_hex": "64c87cde7e12ecf6704ab95bb1408bef047c22db4cc7491c4271d170a1b213d20b385bc1588d9c7b38f1b39d415665b8a9030c9ec653d75e65f847d8fc1fc440",
+        "xprv": "xprv9s21ZrQH143K2XTAhys3pMNcGn261Fi5Ta2Pw8PwaVPhg3D8DWkzWQwjTJfskj8ofb81i9NP2cUNKxwjueJHHMQAnxtivTA75uUFqPFeWzk"
+      },
+      {
+        "entropy_hex": "c0ba5a8e914111210f2bd131f3d5e08d",
+        "mnemonic": "scheme spot photo card baby mountain device kick cradle pact join borrow",
+        "seed_hex": "ea725895aaae8d4c1cf682c1bfd2d358d52ed9f0f0591131b559e2724bb234fca05aa9c02c57407e04ee9dc3b454aa63fbff483a8b11de949624b9f1831a9612",
+        "xprv": "xprv9s21ZrQH143K3FperxDp8vFsFycKCRcJGAFmcV7umQmcnMZaLtZRt13QJDsoS5F6oYT6BB4sS6zmTmyQAEkJKxJ7yByDNtRe5asP2jFGhT6"
+      },
+      {
+        "entropy_hex": "6d9be1ee6ebd27a258115aad99b7317b9c8d28b6d76431c3",
+        "mnemonic": "horn tenant knee talent sponsor spell gate clip pulse soap slush warm silver nephew swap uncle crack brave",
+        "seed_hex": "fd579828af3da1d32544ce4db5c73d53fc8acc4ddb1e3b251a31179cdb71e853c56d2fcb11aed39898ce6c34b10b5382772db8796e52837b54468aeb312cfc3d",
+        "xprv": "xprv9s21ZrQH143K3R1SfVZZLtVbXEB9ryVxmVtVMsMwmEyEvgXN6Q84LKkLRmf4ST6QrLeBm3jQsb9gx1uo23TS7vo3vAkZGZz71uuLCcywUkt"
+      },
+      {
+        "entropy_hex": "9f6a2878b2520799a44ef18bc7df394e7061a224d2c33cd015b157d746869863",
+        "mnemonic": "panda eyebrow bullet gorilla call smoke muffin taste mesh discover soft ostrich alcohol speed nation flash devote level hobby quick inner drive ghost inside",
+        "seed_hex": "72be8e052fc4919d2adf28d5306b5474b0069df35b02303de8c1729c9538dbb6fc2d731d5f832193cd9fb6aeecbc469594a70e3dd50811b5067f3b88b28c3e8d",
+        "xprv": "xprv9s21ZrQH143K2WNnKmssvZYM96VAr47iHUQUTUyUXH3sAGNjhJANddnhw3i3y3pBbRAVk5M5qUGFr4rHbEWwXgX4qrvrceifCYQJbbFDems"
+      },
+      {
+        "entropy_hex": "23db8160a31d3e0dca3688ed941adbf3",
+        "mnemonic": "cat swing flag economy stadium alone churn speed unique patch report train",
+        "seed_hex": "deb5f45449e615feff5640f2e49f933ff51895de3b4381832b3139941c57b59205a42480c52175b6efcffaa58a2503887c1e8b363a707256bdd2b587b46541f5",
+        "xprv": "xprv9s21ZrQH143K4G28omGMogEoYgDQuigBo8AFHAGDaJdqQ99QKMQ5J6fYTMfANTJy6xBmhvsNZ1CJzRZ64PWbnTFUn6CDV2FxoMDLXdk95DQ"
+      },
+      {
+        "entropy_hex": "8197a4a47f0425faeaa69deebc05ca29c0a5b5cc76ceacc0",
+        "mnemonic": "light rule cinnamon wrap drastic word pride squirrel upgrade then income fatal apart sustain crack supply proud access",
+        "seed_hex": "4cbdff1ca2db800fd61cae72a57475fdc6bab03e441fd63f96dabd1f183ef5b782925f00105f318309a7e9c3ea6967c7801e46c8a58082674c860a37b93eda02",
+        "xprv": "xprv9s21ZrQH143K3wtsvY8L2aZyxkiWULZH4vyQE5XkHTXkmx8gHo6RUEfH3Jyr6NwkJhvano7Xb2o6UqFKWHVo5scE31SGDCAUsgVhiUuUDyh"
+      },
+      {
+        "entropy_hex": "066dca1a2bb7e8a1db2832148ce9933eea0f3ac9548d793112d9a95c9407efad",
+        "mnemonic": "all hour make first leader extend hole alien behind guard gospel lava path output census museum junior mass reopen famous sing advance salt reform",
+        "seed_hex": "26e975ec644423f4a4c4f4215ef09b4bd7ef924e85d1d17c4cf3f136c2863cf6df0a475045652c57eb5fb41513ca2a2d67722b77e954b4b3fc11f7590449191d",
+        "xprv": "xprv9s21ZrQH143K3rEfqSM4QZRVmiMuSWY9wugscmaCjYja3SbUD3KPEB1a7QXJoajyR2T1SiXU7rFVRXMV9XdYVSZe7JoUXdP4SRHTxsT1nzm"
+      },
+      {
+        "entropy_hex": "f30f8c1da665478f49b001d94c5fc452",
+        "mnemonic": "vessel ladder alter error federal sibling chat ability sun glass valve picture",
+        "seed_hex": "2aaa9242daafcee6aa9d7269f17d4efe271e1b9a529178d7dc139cd18747090bf9d60295d0ce74309a78852a9caadf0af48aae1c6253839624076224374bc63f",
+        "xprv": "xprv9s21ZrQH143K2QWV9Wn8Vvs6jbqfF1YbTCdURQW9dLFKDovpKaKrqS3SEWsXCu6ZNky9PSAENg6c9AQYHcg4PjopRGGKmdD313ZHszymnps"
+      },
+      {
+        "entropy_hex": "c10ec20dc3cd9f652c7fac2f1230f7a3c828389a14392f05",
+        "mnemonic": "scissors invite lock maple supreme raw rapid void congress muscle digital elegant little brisk hair mango congress clump",
+        "seed_hex": "7b4a10be9d98e6cba265566db7f136718e1398c71cb581e1b2f464cac1ceedf4f3e274dc270003c670ad8d02c4558b2f8e39edea2775c9e232c7cb798b069e88",
+        "xprv": "xprv9s21ZrQH143K4aERa2bq7559eMCCEs2QmmqVjUuzfy5eAeDX4mqZffkYwpzGQRE2YEEeLVRoH4CSHxianrFaVnMN2RYaPUZJhJx8S5j6puX"
+      },
+      {
+        "entropy_hex": "f585c11aec520db57dd353c69554b21a89b20fb0650966fa0a9d6f74fd989d8f",
+        "mnemonic": "void come effort suffer camp survey warrior heavy shoot primary clutch crush open amazing screen patrol group space point ten exist slush involve unfold",
+        "seed_hex": "01f5bced59dec48e362f2c45b5de68b9fd6c92c6634f44d6d40aab69056506f0e35524a518034ddc1192e1dacd32c1ed3eaa3c3b131c88ed8e7e54c49a5d0998",
+        "xprv": "xprv9s21ZrQH143K39rnQJknpH1WEPFJrzmAqqasiDcVrNuk926oizzJDDQkdiTvNPr2FYDYzWgiMiC63YmfPAa2oPyNB23r2g7d1yiK6WpqaQS"
+      }
+    ]
+  },
+  "bip32": [
+    {
+      "name": "bip32_vector_1",
+      "seed_hex": "000102030405060708090a0b0c0d0e0f",
+      "chains": [
+        {
+          "path": "m",
+          "depth": 0,
+          "parent_fingerprint": "00000000",
+          "child_number": 0,
+          "chain_code_hex": "873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508",
+          "public_key_hex": "0339a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2",
+          "private_key_hex": "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35"
+        },
+        {
+          "path": "m/0'",
+          "depth": 1,
+          "parent_fingerprint": "3442193e",
+          "child_number": 2147483648,
+          "chain_code_hex": "47fdacbd0f1097043b78c63c20c34ef4ed9a111d980047ad16282c7ae6236141",
+          "public_key_hex": "035a784662a4a20a65bf6aab9ae98a6c068a81c52e4b032c0fb5400c706cfccc56",
+          "private_key_hex": "edb2e14f9ee77d26dd93b4ecede8d16ed408ce149b6cd80b0715a2d911a0afea"
+        },
+        {
+          "path": "m/0'/1",
+          "depth": 2,
+          "parent_fingerprint": "5c1bd648",
+          "child_number": 1,
+          "chain_code_hex": "2a7857631386ba23dacac34180dd1983734e444fdbf774041578e9b6adb37c19",
+          "public_key_hex": "03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c",
+          "private_key_hex": "3c6cb8d0f6a264c91ea8b5030fadaa8e538b020f0a387421a12de9319dc93368"
+        },
+        {
+          "path": "m/0'/1/2'",
+          "depth": 3,
+          "parent_fingerprint": "bef5a2f9",
+          "child_number": 2147483650,
+          "chain_code_hex": "04466b9cc8e161e966409ca52986c584f07e9dc81f735db683c3ff6ec7b1503f",
+          "public_key_hex": "0357bfe1e341d01c69fe5654309956cbea516822fba8a601743a012a7896ee8dc2",
+          "private_key_hex": "cbce0d719ecf7431d88e6a89fa1483e02e35092af60c042b1df2ff59fa424dca"
+        },
+        {
+          "path": "m/0'/1/2'/2",
+          "depth": 4,
+          "parent_fingerprint": "ee7ab90c",
+          "child_number": 2,
+          "chain_code_hex": "cfb71883f01676f587d023cc53a35bc7f88f724b1f8c2892ac1275ac822a3edd",
+          "public_key_hex": "02e8445082a72f29b75ca48748a914df60622a609cacfce8ed0e35804560741d29",
+          "private_key_hex": "0f479245fb19a38a1954c5c7c0ebab2f9bdfd96a17563ef28a6a4b1a2a764ef4"
+        },
+        {
+          "path": "m/0'/1/2'/2/1000000000",
+          "depth": 5,
+          "parent_fingerprint": "d880d7d8",
+          "child_number": 1000000000,
+          "chain_code_hex": "c783e67b921d2beb8f6b389cc646d7263b4145701dadd2161548a8b078e65e9e",
+          "public_key_hex": "022a471424da5e657499d1ff51cb43c47481a03b1e77f951fe64cec9f5a48f7011",
+          "private_key_hex": "471b76e389e528d6de6d816857e012c5455051cad6660850e58372a6c3e6e7c8"
+        }
+      ]
+    },
+    {
+      "name": "bip32_vector_2",
+      "seed_hex": "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542",
+      "chains": [
+        {
+          "path": "m",
+          "depth": 0,
+          "parent_fingerprint": "00000000",
+          "child_number": 0,
+          "chain_code_hex": "60499f801b896d83179a4374aeb7822aaeaceaa0db1f85ee3e904c4defbd9689",
+          "public_key_hex": "03cbcaa9c98c877a26977d00825c956a238e8dddfbd322cce4f74b0b5bd6ace4a7",
+          "private_key_hex": "4b03d6fc340455b363f51020ad3ecca4f0850280cf436c70c727923f6db46c3e"
+        },
+        {
+          "path": "m/0",
+          "depth": 1,
+          "parent_fingerprint": "bd16bee5",
+          "child_number": 0,
+          "chain_code_hex": "f0909affaa7ee7abe5dd4e100598d4dc53cd709d5a5c2cac40e7412f232f7c9c",
+          "public_key_hex": "02fc9e5af0ac8d9b3cecfe2a888e2117ba3d089d8585886c9c826b6b22a98d12ea",
+          "private_key_hex": "abe74a98f6c7eabee0428f53798f0ab8aa1bd37873999041703c742f15ac7e1e"
+        },
+        {
+          "path": "m/0/2147483647'",
+          "depth": 2,
+          "parent_fingerprint": "5a61ff8e",
+          "child_number": 4294967295,
+          "chain_code_hex": "be17a268474a6bb9c61e1d720cf6215e2a88c5406c4aee7b38547f585c9a37d9",
+          "public_key_hex": "03c01e7425647bdefa82b12d9bad5e3e6865bee0502694b94ca58b666abc0a5c3b",
+          "private_key_hex": "877c779ad9687164e9c2f4f0f4ff0340814392330693ce95a58fe18fd52e6e93"
+        },
+        {
+          "path": "m/0/2147483647'/1",
+          "depth": 3,
+          "parent_fingerprint": "d8ab4937",
+          "child_number": 1,
+          "chain_code_hex": "f366f48f1ea9f2d1d3fe958c95ca84ea18e4c4ddb9366c336c927eb246fb38cb",
+          "public_key_hex": "03a7d1d856deb74c508e05031f9895dab54626251b3806e16b4bd12e781a7df5b9",
+          "private_key_hex": "704addf544a06e5ee4bea37098463c23613da32020d604506da8c0518e1da4b7"
+        },
+        {
+          "path": "m/0/2147483647'/1/2147483646'",
+          "depth": 4,
+          "parent_fingerprint": "78412e3a",
+          "child_number": 4294967294,
+          "chain_code_hex": "637807030d55d01f9a0cb3a7839515d796bd07706386a6eddf06cc29a65a0e29",
+          "public_key_hex": "02d2b36900396c9282fa14628566582f206a5dd0bcc8d5e892611806cafb0301f0",
+          "private_key_hex": "f1c7c871a54a804afe328b4c83a1c33b8e5ff48f5087273f04efa83b247d6a2d"
+        },
+        {
+          "path": "m/0/2147483647'/1/2147483646'/2",
+          "depth": 5,
+          "parent_fingerprint": "31a507b8",
+          "child_number": 2,
+          "chain_code_hex": "9452b549be8cea3ecb7a84bec10dcfd94afe4d129ebfd3b3cb58eedf394ed271",
+          "public_key_hex": "024d902e1a2fc7a8755ab5b694c575fce742c48d9ff192e63df5193e4c7afe1f9c",
+          "private_key_hex": "bb7d39bdb83ecf58f2fd82b6d918341cbef428661ef01ab97c28a4842125ac23"
+        }
+      ]
+    },
+    {
+      "name": "bip32_vector_3",
+      "seed_hex": "4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be",
+      "chains": [
+        {
+          "path": "m",
+          "depth": 0,
+          "parent_fingerprint": "00000000",
+          "child_number": 0,
+          "chain_code_hex": "01d28a3e53cffa419ec122c968b3259e16b65076495494d97cae10bbfec3c36f",
+          "public_key_hex": "03683af1ba5743bdfc798cf814efeeab2735ec52d95eced528e692b8e34c4e5669",
+          "private_key_hex": "00ddb80b067e0d4993197fe10f2657a844a384589847602d56f0c629c81aae32"
+        },
+        {
+          "path": "m/0'",
+          "depth": 1,
+          "parent_fingerprint": "41d63b50",
+          "child_number": 2147483648,
+          "chain_code_hex": "e5fea12a97b927fc9dc3d2cb0d1ea1cf50aa5a1fdc1f933e8906bb38df3377bd",
+          "public_key_hex": "026557fdda1d5d43d79611f784780471f086d58e8126b8c40acb82272a7712e7f2",
+          "private_key_hex": "491f7a2eebc7b57028e0d3faa0acda02e75c33b03c48fb288c41e2ea44e1daef"
+        }
+      ]
+    },
+    {
+      "name": "bip32_vector_4",
+      "seed_hex": "3ddd5602285899a946114506157c7997e5444528f3003f6134712147db19b678",
+      "chains": [
+        {
+          "path": "m",
+          "depth": 0,
+          "parent_fingerprint": "00000000",
+          "child_number": 0,
+          "chain_code_hex": "d0c8a1f6edf2500798c3e0b54f1b56e45f6d03e6076abd36e5e2f54101e44ce6",
+          "public_key_hex": "026f6fedc9240f61daa9c7144b682a430a3a1366576f840bf2d070101fcbc9a02d",
+          "private_key_hex": "12c0d59c7aa3a10973dbd3f478b65f2516627e3fe61e00c345be9a477ad2e215"
+        },
+        {
+          "path": "m/0'",
+          "depth": 1,
+          "parent_fingerprint": "ad85d955",
+          "child_number": 2147483648,
+          "chain_code_hex": "cdc0f06456a14876c898790e0b3b1a41c531170aec69da44ff7b7265bfe7743b",
+          "public_key_hex": "039382d2b6003446792d2917f7ac4b3edf079a1a94dd4eb010dc25109dda680a9d",
+          "private_key_hex": "00d948e9261e41362a688b916f297121ba6bfb2274a3575ac0e456551dfd7f7e"
+        },
+        {
+          "path": "m/0'/1'",
+          "depth": 2,
+          "parent_fingerprint": "cfa61281",
+          "child_number": 2147483649,
+          "chain_code_hex": "a48ee6674c5264a237703fd383bccd9fad4d9378ac98ab05e6e7029b06360c0d",
+          "public_key_hex": "032edaf9e591ee27f3c69c36221e3c54c38088ef34e93fbb9bb2d4d9b92364cbbd",
+          "private_key_hex": "3a2086edd7d9df86c3487a5905a1712a9aa664bce8cc268141e07549eaa8661d"
+        }
+      ]
+    }
+  ],
+  "slip10_ed25519": [
+    {
+      "name": "slip10_ed25519_vector_1",
+      "seed_hex": "000102030405060708090a0b0c0d0e0f",
+      "chains": [
+        {
+          "path": "m",
+          "parent_fingerprint": "00000000",
+          "chain_code_hex": "90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb",
+          "private_key_hex": "2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7",
+          "public_key_hex": "a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed"
+        },
+        {
+          "path": "m/0'",
+          "parent_fingerprint": "ddebc675",
+          "chain_code_hex": "8b59aa11380b624e81507a27fedda59fea6d0b779a778918a2fd3590e16e9c69",
+          "private_key_hex": "68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3",
+          "public_key_hex": "8c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c"
+        },
+        {
+          "path": "m/0'/1'",
+          "parent_fingerprint": "13dab143",
+          "chain_code_hex": "a320425f77d1b5c2505a6b1b27382b37368ee640e3557c315416801243552f14",
+          "private_key_hex": "b1d0bad404bf35da785a64ca1ac54b2617211d2777696fbffaf208f746ae84f2",
+          "public_key_hex": "1932a5270f335bed617d5b935c80aedb1a35bd9fc1e31acafd5372c30f5c1187"
+        },
+        {
+          "path": "m/0'/1'/2'",
+          "parent_fingerprint": "ebe4cb29",
+          "chain_code_hex": "2e69929e00b5ab250f49c3fb1c12f252de4fed2c1db88387094a0f8c4c9ccd6c",
+          "private_key_hex": "92a5b23c0b8a99e37d07df3fb9966917f5d06e02ddbd909c7e184371463e9fc9",
+          "public_key_hex": "ae98736566d30ed0e9d2f4486a64bc95740d89c7db33f52121f8ea8f76ff0fc1"
+        },
+        {
+          "path": "m/0'/1'/2'/2'",
+          "parent_fingerprint": "316ec1c6",
+          "chain_code_hex": "8f6d87f93d750e0efccda017d662a1b31a266e4a6f5993b15f5c1f07f74dd5cc",
+          "private_key_hex": "30d1dc7e5fc04c31219ab25a27ae00b50f6fd66622f6e9c913253d6511d1e662",
+          "public_key_hex": "8abae2d66361c879b900d204ad2cc4984fa2aa344dd7ddc46007329ac76c429c"
+        },
+        {
+          "path": "m/0'/1'/2'/2'/1000000000'",
+          "parent_fingerprint": "d6322ccd",
+          "chain_code_hex": "68789923a0cac2cd5a29172a475fe9e0fb14cd6adb5ad98a3fa70333e7afa230",
+          "private_key_hex": "8f94d394a8e8fd6b1bc2f3f49f5c47e385281d5c17e65324b0f62483e37e8793",
+          "public_key_hex": "3c24da049451555d51a7014a37337aa4e12d41e485abccfa46b47dfb2af54b7a"
+        }
+      ]
+    },
+    {
+      "name": "slip10_ed25519_vector_2",
+      "seed_hex": "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542",
+      "chains": [
+        {
+          "path": "m",
+          "parent_fingerprint": "00000000",
+          "chain_code_hex": "ef70a74db9c3a5af931b5fe73ed8e1a53464133654fd55e7a66f8570b8e33c3b",
+          "private_key_hex": "171cb88b1b3c1db25add599712e36245d75bc65a1a5c9e18d76f9f2b1eab4012",
+          "public_key_hex": "8fe9693f8fa62a4305a140b9764c5ee01e455963744fe18204b4fb948249308a"
+        },
+        {
+          "path": "m/0'",
+          "parent_fingerprint": "31981b50",
+          "chain_code_hex": "0b78a3226f915c082bf118f83618a618ab6dec793752624cbeb622acb562862d",
+          "private_key_hex": "1559eb2bbec5790b0c65d8693e4d0875b1747f4970ae8b650486ed7470845635",
+          "public_key_hex": "86fab68dcb57aa196c77c5f264f215a112c22a912c10d123b0d03c3c28ef1037"
+        },
+        {
+          "path": "m/0'/2147483647'",
+          "parent_fingerprint": "1e9411b1",
+          "chain_code_hex": "138f0b2551bcafeca6ff2aa88ba8ed0ed8de070841f0c4ef0165df8181eaad7f",
+          "private_key_hex": "ea4f5bfe8694d8bb74b7b59404632fd5968b774ed545e810de9c32a4fb4192f4",
+          "public_key_hex": "5ba3b9ac6e90e83effcd25ac4e58a1365a9e35a3d3ae5eb07b9e4d90bcf7506d"
+        },
+        {
+          "path": "m/0'/2147483647'/1'",
+          "parent_fingerprint": "fcadf38c",
+          "chain_code_hex": "73bd9fff1cfbde33a1b846c27085f711c0fe2d66fd32e139d3ebc28e5a4a6b90",
+          "private_key_hex": "3757c7577170179c7868353ada796c839135b3d30554bbb74a4b1e4a5a58505c",
+          "public_key_hex": "2e66aa57069c86cc18249aecf5cb5a9cebbfd6fadeab056254763874a9352b45"
+        },
+        {
+          "path": "m/0'/2147483647'/1'/2147483646'",
+          "parent_fingerprint": "aca70953",
+          "chain_code_hex": "0902fe8a29f9140480a00ef244bd183e8a13288e4412d8389d140aac1794825a",
+          "private_key_hex": "5837736c89570de861ebc173b1086da4f505d4adb387c6a1b1342d5e4ac9ec72",
+          "public_key_hex": "e33c0f7d81d843c572275f287498e8d408654fdf0d1e065b84e2e6f157aab09b"
+        },
+        {
+          "path": "m/0'/2147483647'/1'/2147483646'/2'",
+          "parent_fingerprint": "422c654b",
+          "chain_code_hex": "5d70af781f3a37b829f0d060924d5e960bdc02e85423494afc0b1a41bbe196d4",
+          "private_key_hex": "551d333177df541ad876a60ea71f00447931c0a9da16f227c11ea080d7391b8d",
+          "public_key_hex": "47150c75db263559a70d5778bf36abbab30fb061ad69f69ece61a72b0cfa4fc0"
+        }
+      ]
+    }
+  ]
+}

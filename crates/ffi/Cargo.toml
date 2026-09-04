@@ -1,0 +1,24 @@
+[package]
+name = "zunia-ffi"
+description = "C ABI and flutter_rust_bridge surface over the Zunia wallet kernel for mobile"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+zunia-kernel.workspace = true
+zunia-cosmos.workspace = true
+zunia-evm.workspace = true
+zunia-registry.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+# flutter_rust_bridge is an optional path for full Dart codegen. The C ABI below is enough for
+# a first mobile integration and for the signed GitHub Release artifacts; FRB bindings are
+# generated in packages/dart when the bridge CLI is available.

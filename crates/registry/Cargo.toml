@@ -1,0 +1,14 @@
+[package]
+name = "zunia-registry"
+description = "Parses zunia-chain-registry chain descriptors and resolves per-chain crypto parameters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+zunia-kernel.workspace = true
+serde.workspace = true
+serde_json.workspace = true

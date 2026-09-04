@@ -1,0 +1,441 @@
+{
+  "description": "Solana golden vectors generated with @solana/web3.js. Asserted by crates/svm/tests/golden_vectors.rs. Regenerate with pnpm generate:svm.",
+  "generator": "@solana/web3.js v1",
+  "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  "note": "web3.js sorts accounts within a privilege class by base58 string; solana-sdk and this wallet sort by raw key bytes. Cases where the two disagree are flagged with orderingsAgree=false and are asserted for parseability and signature validity rather than byte equality.",
+  "accounts": [
+    {
+      "path": "m/44'/501'/0'/0'",
+      "privateKey": "37df573b3ac4ad5b522e064e25b63ea16bcbe79d449e81a0268d1047948bb445",
+      "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "publicKey": "f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7"
+    },
+    {
+      "path": "m/44'/501'/1'/0'",
+      "privateKey": "ba5e7b6e3680b4eb81db8e54c8e466b2e9a899355888403355d858ab985d2fc4",
+      "address": "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+      "publicKey": "f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd4"
+    },
+    {
+      "path": "m/44'/501'/2'/0'",
+      "privateKey": "2f2d4843b13aec3867edc61fbeac4a1fa58797a8629aa35217bd183405bcc202",
+      "address": "7WktogJEd2wQ9eH2oWusmcoFTgeYi6rS632UviTBJ2jm",
+      "publicKey": "60c5985f58a32ff8ab91e2fbd1d211b8de6b4acc4f6ce4458830efc0c801ca1c"
+    },
+    {
+      "path": "m/44'/501'/3'/0'",
+      "privateKey": "aca2b17c35b7772de2a58e1083a33f7a4eadd0d30d7add9742c7de06fdf73d55",
+      "address": "3YqEpfo3c818GhvbQ1UmVY1nJxw16vtu4JB9peJXT94k",
+      "publicKey": "25deec12e0409b3f009b208fad2d9bd9d7f9c195d3e829897f9b21dfdb4a8649"
+    }
+  ],
+  "transactions": [
+    {
+      "name": "single_transfer",
+      "note": "One transfer, one signer. Only one non-payer account, so both orderings agree by construction.",
+      "signerPaths": [
+        "m/44'/501'/0'/0'"
+      ],
+      "feePayer": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "recentBlockhash": "EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq1k",
+      "header": {
+        "numRequiredSignatures": 1,
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 1
+      },
+      "accountKeys": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111"
+      ],
+      "accountKeysInSdkOrder": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111"
+      ],
+      "orderingsAgree": true,
+      "instructions": [
+        {
+          "programIdIndex": 2,
+          "accounts": [
+            0,
+            1
+          ],
+          "data": "0200000000ca9a3b00000000"
+        }
+      ],
+      "messageBytes": "01000103f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01020200010c0200000000ca9a3b00000000",
+      "signatures": [
+        {
+          "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+          "signature": "3cf61ab47cd85a7ae163c10573fd68003e35299a49883bbc82ad4bde6bb43b917e81c6faafc4c5040f34f8c06d848265afc4b0419ebcbac29207fbe33e8c4203"
+        }
+      ],
+      "wire": "013cf61ab47cd85a7ae163c10573fd68003e35299a49883bbc82ad4bde6bb43b917e81c6faafc4c5040f34f8c06d848265afc4b0419ebcbac29207fbe33e8c420301000103f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01020200010c0200000000ca9a3b00000000",
+      "id": "2Dh5xGS38DND5Rf3gPGF5sZnE18JFH3BPrY59wwiDHaGCQPq8HPW9KTFYSV4RyYT97hJkHMiNnWghXYPxMhaycpa"
+    },
+    {
+      "name": "transfer_one_lamport",
+      "note": "The smallest non-zero amount, so the little-endian u64 has a single set byte.",
+      "signerPaths": [
+        "m/44'/501'/0'/0'"
+      ],
+      "feePayer": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "recentBlockhash": "EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq1k",
+      "header": {
+        "numRequiredSignatures": 1,
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 1
+      },
+      "accountKeys": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111"
+      ],
+      "accountKeysInSdkOrder": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111"
+      ],
+      "orderingsAgree": true,
+      "instructions": [
+        {
+          "programIdIndex": 2,
+          "accounts": [
+            0,
+            1
+          ],
+          "data": "020000000100000000000000"
+        }
+      ],
+      "messageBytes": "01000103f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01020200010c020000000100000000000000",
+      "signatures": [
+        {
+          "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+          "signature": "5d02e61a6f1070a356058c372a12754b347f247c7d6dc19fde686dd44773980610c67b30b745db0a0f8c9446f7f914995c2d0fd677aceb8242caac38e8003402"
+        }
+      ],
+      "wire": "015d02e61a6f1070a356058c372a12754b347f247c7d6dc19fde686dd44773980610c67b30b745db0a0f8c9446f7f914995c2d0fd677aceb8242caac38e800340201000103f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01020200010c020000000100000000000000",
+      "id": "2rrgA7rLCipRUgWtF5bZHLKEkRYkZx35CRj8roERP36RSqTmscT3RV5FPGczMReZUnoxKkqn7Sf8hqAosrfEhhi9"
+    },
+    {
+      "name": "transfer_zero_lamports",
+      "note": "Zero is a legal transfer and must still encode all eight amount bytes.",
+      "signerPaths": [
+        "m/44'/501'/0'/0'"
+      ],
+      "feePayer": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "recentBlockhash": "EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq1k",
+      "header": {
+        "numRequiredSignatures": 1,
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 1
+      },
+      "accountKeys": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111"
+      ],
+      "accountKeysInSdkOrder": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111"
+      ],
+      "orderingsAgree": true,
+      "instructions": [
+        {
+          "programIdIndex": 2,
+          "accounts": [
+            0,
+            1
+          ],
+          "data": "020000000000000000000000"
+        }
+      ],
+      "messageBytes": "01000103f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01020200010c020000000000000000000000",
+      "signatures": [
+        {
+          "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+          "signature": "5e6f25500ecdfbba3dd6842b49474513b0951df3af6fb23749dd94926ddcccf29c98bf0b14beec0dfd02585d3da6a62fdba6de92bdb38c96978ee00af807350c"
+        }
+      ],
+      "wire": "015e6f25500ecdfbba3dd6842b49474513b0951df3af6fb23749dd94926ddcccf29c98bf0b14beec0dfd02585d3da6a62fdba6de92bdb38c96978ee00af807350c01000103f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01020200010c020000000000000000000000",
+      "id": "2tWNXpsRnzNhPDL4T1cUgZ8gasJNQHG87bxFWZwKx125UgfRPLpJFZymefuXdicYvRroBpErmDSbvn3TwsGepWif"
+    },
+    {
+      "name": "two_transfers",
+      "note": "Two instructions sharing a payer. Two distinct recipients, so account ordering is observable.",
+      "signerPaths": [
+        "m/44'/501'/0'/0'"
+      ],
+      "feePayer": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "recentBlockhash": "EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq1k",
+      "header": {
+        "numRequiredSignatures": 1,
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 1
+      },
+      "accountKeys": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "7WktogJEd2wQ9eH2oWusmcoFTgeYi6rS632UviTBJ2jm",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111"
+      ],
+      "accountKeysInSdkOrder": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "7WktogJEd2wQ9eH2oWusmcoFTgeYi6rS632UviTBJ2jm",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111"
+      ],
+      "orderingsAgree": true,
+      "instructions": [
+        {
+          "programIdIndex": 3,
+          "accounts": [
+            0,
+            2
+          ],
+          "data": "020000006400000000000000"
+        },
+        {
+          "programIdIndex": 3,
+          "accounts": [
+            0,
+            1
+          ],
+          "data": "02000000fa00000000000000"
+        }
+      ],
+      "messageBytes": "01000104f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f760c5985f58a32ff8ab91e2fbd1d211b8de6b4acc4f6ce4458830efc0c801ca1cf8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb02030200020c020000006400000000000000030200010c02000000fa00000000000000",
+      "signatures": [
+        {
+          "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+          "signature": "323aca07652fd2938068c1c2450bd14dae42b4bd36123756dd3952876db3cc4064591c9dee3733d66e25e6eb8da054279ca9b863f5e4d229af236c471fe8b60a"
+        }
+      ],
+      "wire": "01323aca07652fd2938068c1c2450bd14dae42b4bd36123756dd3952876db3cc4064591c9dee3733d66e25e6eb8da054279ca9b863f5e4d229af236c471fe8b60a01000104f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f760c5985f58a32ff8ab91e2fbd1d211b8de6b4acc4f6ce4458830efc0c801ca1cf8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb02030200020c020000006400000000000000030200010c02000000fa00000000000000",
+      "id": "21FJWz5QF4DL8orJy2ddHbH5Utc23C2v8xQuo8jSaomgV1Uwtc8sBYrBe4kjKs3g5kMD8Bkb6AaewU6haWqyeoCD"
+    },
+    {
+      "name": "multi_signer",
+      "note": "The payer covers the fee while a second account funds the transfer, so two signatures are required.",
+      "signerPaths": [
+        "m/44'/501'/0'/0'",
+        "m/44'/501'/1'/0'"
+      ],
+      "feePayer": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "recentBlockhash": "EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq1k",
+      "header": {
+        "numRequiredSignatures": 2,
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 1
+      },
+      "accountKeys": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "7WktogJEd2wQ9eH2oWusmcoFTgeYi6rS632UviTBJ2jm",
+        "11111111111111111111111111111111"
+      ],
+      "accountKeysInSdkOrder": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "7WktogJEd2wQ9eH2oWusmcoFTgeYi6rS632UviTBJ2jm",
+        "11111111111111111111111111111111"
+      ],
+      "orderingsAgree": true,
+      "instructions": [
+        {
+          "programIdIndex": 3,
+          "accounts": [
+            1,
+            2
+          ],
+          "data": "020000002a00000000000000"
+        }
+      ],
+      "messageBytes": "02000104f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd460c5985f58a32ff8ab91e2fbd1d211b8de6b4acc4f6ce4458830efc0c801ca1c0000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01030201020c020000002a00000000000000",
+      "signatures": [
+        {
+          "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+          "signature": "e080707207c9e8256396b6d90bffed97e830772e1256ffc70829e0543e80f92551c94eb1212a33d9b54643c95cda95024bce87e8290fccdd38934fc2592b5c00"
+        },
+        {
+          "address": "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+          "signature": "b702df375faf2a68844f9dc9ef3bebe0786c89d75a50979b016dc215f3f8a2f5e32b1a64fbe792336c25ee19cede798a9a28801c9cbfe1e8e91d6a53d4c50707"
+        }
+      ],
+      "wire": "02e080707207c9e8256396b6d90bffed97e830772e1256ffc70829e0543e80f92551c94eb1212a33d9b54643c95cda95024bce87e8290fccdd38934fc2592b5c00b702df375faf2a68844f9dc9ef3bebe0786c89d75a50979b016dc215f3f8a2f5e32b1a64fbe792336c25ee19cede798a9a28801c9cbfe1e8e91d6a53d4c5070702000104f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd460c5985f58a32ff8ab91e2fbd1d211b8de6b4acc4f6ce4458830efc0c801ca1c0000000000000000000000000000000000000000000000000000000000000000c49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01030201020c020000002a00000000000000",
+      "id": "5VLLqzUkeRu4r6zj5rnktdrZorcZLWf584htnLJfFE51eFtrWev5jvULdXd8s1oXgS3BeE3iKGp4iztSVXHH8KgB"
+    },
+    {
+      "name": "opaque_program",
+      "note": "An instruction for a program we do not decode. The summary must report it as unreadable rather than guess.",
+      "signerPaths": [
+        "m/44'/501'/0'/0'"
+      ],
+      "feePayer": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "recentBlockhash": "EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq1k",
+      "header": {
+        "numRequiredSignatures": 1,
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 1
+      },
+      "accountKeys": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      ],
+      "accountKeysInSdkOrder": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      ],
+      "orderingsAgree": true,
+      "instructions": [
+        {
+          "programIdIndex": 1,
+          "accounts": [
+            0
+          ],
+          "data": "7a756e6961"
+        }
+      ],
+      "messageBytes": "01000102f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448dc49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01010100057a756e6961",
+      "signatures": [
+        {
+          "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+          "signature": "c5019e70058c3b505cb7f6e87321812cb0f34a988b922464ae0d79bcac52ff4c4cfb4b5632d1edb89afedb19b45987fdb658fb9c33cf13e61efbb8cdc3e0a60e"
+        }
+      ],
+      "wire": "01c5019e70058c3b505cb7f6e87321812cb0f34a988b922464ae0d79bcac52ff4c4cfb4b5632d1edb89afedb19b45987fdb658fb9c33cf13e61efbb8cdc3e0a60e01000102f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448dc49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01010100057a756e6961",
+      "id": "4wT5h39mWa6KhfZA2ggMh2Ar8oPp8s4UVHtq5tsGHu8D62TscGMuTb3Yqe2MEsEQZLemF4QexEYUKekcmS3bReRB"
+    },
+    {
+      "name": "transfer_plus_memo",
+      "note": "A readable transfer next to an unreadable memo. The mixed case must not be presented as fully readable.",
+      "signerPaths": [
+        "m/44'/501'/0'/0'"
+      ],
+      "feePayer": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "recentBlockhash": "EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq1k",
+      "header": {
+        "numRequiredSignatures": 1,
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 2
+      },
+      "accountKeys": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111",
+        "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      ],
+      "accountKeysInSdkOrder": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb",
+        "11111111111111111111111111111111",
+        "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      ],
+      "orderingsAgree": true,
+      "instructions": [
+        {
+          "programIdIndex": 2,
+          "accounts": [
+            0,
+            1
+          ],
+          "data": "02000000404b4c0000000000"
+        },
+        {
+          "programIdIndex": 3,
+          "accounts": [],
+          "data": "7468616e6b73"
+        }
+      ],
+      "messageBytes": "01000204f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448dc49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb02020200010c02000000404b4c00000000000300067468616e6b73",
+      "signatures": [
+        {
+          "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+          "signature": "d189930c5057c22d5517c0e823cc7db5c78b61bdee5696b63b924164dbbabebf5ceb7d028bcf4490202b3038e7fd707efb3ea5c91645decf08b42e2a5fc51c0e"
+        }
+      ],
+      "wire": "01d189930c5057c22d5517c0e823cc7db5c78b61bdee5696b63b924164dbbabebf5ceb7d028bcf4490202b3038e7fd707efb3ea5c91645decf08b42e2a5fc51c0e01000204f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7f8029acf5cbcbdd5ac46ec147f3b78a3df6e5022ef0411db2bab650d329a4cd40000000000000000000000000000000000000000000000000000000000000000054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448dc49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb02020200010c02000000404b4c00000000000300067468616e6b73",
+      "id": "5BytLe4w2PXTFiCdcghksCM716m1ZoYfxFUfVsY3PUEhsdPJ1GBvFUKkET6p3dDRK5vU9DMVgN9E2isAAmu114Rs"
+    },
+    {
+      "name": "empty_instruction_data",
+      "note": "Zero-length data still needs its compact length prefix written.",
+      "signerPaths": [
+        "m/44'/501'/0'/0'"
+      ],
+      "feePayer": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "recentBlockhash": "EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq1k",
+      "header": {
+        "numRequiredSignatures": 1,
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 1
+      },
+      "accountKeys": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      ],
+      "accountKeysInSdkOrder": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      ],
+      "orderingsAgree": true,
+      "instructions": [
+        {
+          "programIdIndex": 1,
+          "accounts": [],
+          "data": ""
+        }
+      ],
+      "messageBytes": "01000102f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448dc49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01010000",
+      "signatures": [
+        {
+          "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+          "signature": "ffb0826bbd36dd1b9163965fd696e250d0811a4cf7dbd8fa81f4247bd8b71a5f4f627bfb2f8bb23528eebd9487cd591a8f8a7d923a3d09f9a2d06f0c8fe7ad03"
+        }
+      ],
+      "wire": "01ffb0826bbd36dd1b9163965fd696e250d0811a4cf7dbd8fa81f4247bd8b71a5f4f627bfb2f8bb23528eebd9487cd591a8f8a7d923a3d09f9a2d06f0c8fe7ad0301000102f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448dc49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb01010000",
+      "id": "67VwfXXJKH1z1YZdz4WbBJ5ECdk4siqLcF5yqmqXLKUPtQj2kvpizh8zRUP9sGXf6vWvJV1NZBzcWjq8C6Tweq5t"
+    },
+    {
+      "name": "large_instruction_data",
+      "note": "Data past 127 bytes forces a two-byte compact length, which is where a naive u8 prefix breaks.",
+      "signerPaths": [
+        "m/44'/501'/0'/0'"
+      ],
+      "feePayer": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      "recentBlockhash": "EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq1k",
+      "header": {
+        "numRequiredSignatures": 1,
+        "numReadonlySignedAccounts": 0,
+        "numReadonlyUnsignedAccounts": 1
+      },
+      "accountKeys": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      ],
+      "accountKeysInSdkOrder": [
+        "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      ],
+      "orderingsAgree": true,
+      "instructions": [
+        {
+          "programIdIndex": 1,
+          "accounts": [],
+          "data": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+        }
+      ],
+      "messageBytes": "01000102f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448dc49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb010100c801abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+      "signatures": [
+        {
+          "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+          "signature": "0384c05b8152f5766ae4826241d9a420fd5f3e22f0644ddaf1b06b64e345c565aa32f2760216005b3ab4cb663c111199a70d3949fdc7263b3fe7200d089d040c"
+        }
+      ],
+      "wire": "010384c05b8152f5766ae4826241d9a420fd5f3e22f0644ddaf1b06b64e345c565aa32f2760216005b3ab4cb663c111199a70d3949fdc7263b3fe7200d089d040c01000102f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448dc49ae77603782054f17a9decea43b444eba0edb12c6f1d31c6e0e4a84bf052eb010100c801abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+      "id": "55ebnxDZr5HfFN4JRzXcQkWAfbFJuFboDhep1HWQJv8akCHfmXKacdLP9pH9HrDj4nNgzvmVZwpn7VYr18XnRXR"
+    }
+  ]
+}

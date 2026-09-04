@@ -1,0 +1,74 @@
+name: Fuzz
+
+on:
+  schedule:
+    # 03:00 UTC daily. Fuzzing is only useful with a real time budget, so it cannot block pull
+    # requests; per-PR CI builds the targets and replays the committed corpus instead.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: Seconds to run each target
+        required: false
+        default: "600"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - tx_decoder
+          - eip712_parser
+          - svm_message
+          - registry_parser
+          - address_parser
+          - keyring_envelope
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out zunia-chain-registry
+        uses: actions/checkout@v4
+        with:
+          repository: Zunia-Lab/zunia-chain-registry
+          path: .registry
+
+      # cargo-fuzz needs nightly for the sanitizer support.
+      - name: Install nightly
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # Seeding the corpus is what makes the difference between finding structured bugs and
+      # spending the whole budget rediscovering that "{" is not a chain descriptor.
+      - name: Extend the corpus with the full registry
+        if: matrix.target == 'registry_parser'
+        run: cp .registry/cosmos/*.json fuzz/corpus/registry_parser/
+
+      - name: Run
+        run: |
+          cargo fuzz run ${{ matrix.target }} \
+            -- -max_total_time=${{ github.event.inputs.duration_seconds || '600' }}
+
+      # A crash is a finding, so the artifact has to survive the job. The follow-up is to commit
+      # it to fuzz/corpus/ and write a unit test in the crate it came from, so the fix stays
+      # fixed without needing the fuzzer to rediscover it.
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

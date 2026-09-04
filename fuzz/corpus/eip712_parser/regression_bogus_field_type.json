@@ -1,0 +1,1 @@
+{"types": {"EIP712Domain": [{"name": "name", "type": "string"}], "Ping": [{"name": "nonce", "type": "256"}]}, "primaryType": "Ping", "domain": {"name": "Zunia"}, "message": {"nonce": "1"}}
