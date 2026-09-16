@@ -3,9 +3,9 @@ Pod::Spec.new do |s|
   s.version          = '0.1.0'
   s.summary          = 'Zunia wallet kernel FFI bindings'
   s.description      = 'Loads the prebuilt ZuniaCore native library via DynamicLibrary.process().'
-  s.homepage         = 'https://zuniawallet.com'
+  s.homepage         = 'https://zunialab.com'
   s.license          = { :type => 'Apache-2.0' }
-  s.author           = { 'Zunia Lab' => 'support@zuniawallet.com' }
+  s.author           = { 'Zunia Lab' => 'support@zunialab.com' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'

@@ -273,7 +273,7 @@ const messageCases = [
   {
     name: "siwe",
     message:
-      "app.zuniawallet.com wants you to sign in with your Ethereum account:\n0x9858EfFD232B4033E47d90003D41EC34EcaEda94\n\nURI: https://app.zuniawallet.com\nVersion: 1\nChain ID: 1\nNonce: 32891756\nIssued At: 2026-08-31T12:00:00.000Z",
+      "app.zunialab.com wants you to sign in with your Ethereum account:\n0x9858EfFD232B4033E47d90003D41EC34EcaEda94\n\nURI: https://app.zunialab.com\nVersion: 1\nChain ID: 1\nNonce: 32891756\nIssued At: 2026-08-31T12:00:00.000Z",
   },
   {
     name: "unicode",

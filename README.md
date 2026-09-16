@@ -36,7 +36,7 @@ Crypto test vectors live under `tests/vectors/` (BIP-39/32/44 official vectors t
 
 ## Security
 
-Report to [security@zuniawallet.com](mailto:security@zuniawallet.com). Never log or transmit seed material.
+Report to [security@zunialab.com](mailto:security@zunialab.com). Never log or transmit seed material.
 
 ## License
 

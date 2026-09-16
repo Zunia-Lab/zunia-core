@@ -1,6 +1,6 @@
 # Security Policy
 
-Report vulnerabilities privately to [security@zuniawallet.com](mailto:security@zuniawallet.com).
+Report vulnerabilities privately to [security@zunialab.com](mailto:security@zunialab.com).
 
 Do not open public GitHub issues for security reports.
 
