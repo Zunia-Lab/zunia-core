@@ -13,6 +13,8 @@
     "vectors:svm": "cd tests/vectors/generate && pnpm install && node svm-vectors.mjs",
     "vectors": "pnpm vectors:bip && pnpm vectors:cosmos && pnpm vectors:addresses && pnpm vectors:evm && pnpm vectors:svm",
     "build:wasm": "./scripts/build-wasm.sh",
+    "smoke:wasm": "node scripts/smoke-npm.mjs",
+    "verify:wasm": "./scripts/build-wasm.sh && node scripts/smoke-npm.mjs",
     "build:native": "./scripts/build-native.sh",
     "test": "cargo test --workspace --all-features",
     "lint": "cargo clippy --workspace --all-targets --all-features -- -D warnings",

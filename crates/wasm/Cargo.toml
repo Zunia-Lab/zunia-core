@@ -24,6 +24,12 @@ js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 console_error_panic_hook = { version = "0.1", optional = true }
 
+# Test-only. sha2 is already on the workspace's crypto path; the bindings themselves never
+# hash anything, but the preview test has to prove that `signBytesHash` is the hash of the
+# bytes `build_sign_bytes` returns rather than of something adjacent to them.
+[dev-dependencies]
+sha2.workspace = true
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true, features = ["js"] }
 

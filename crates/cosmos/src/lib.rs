@@ -10,6 +10,7 @@
 //! - [`amino`]: canonical JSON for `SIGN_MODE_LEGACY_AMINO_JSON`.
 //! - [`amount`]: string-based coin arithmetic, because Cosmos amounts exceed `u64`.
 //! - [`msg`]: the message set, each with both encodings.
+//! - [`json`]: the proto-JSON bridge every binding parses client payloads through.
 //! - [`tx`]: transaction assembly, both sign documents, and ADR-36.
 //! - [`decode`]: turning bytes the wallet did not build into something a user can read.
 //!
@@ -26,6 +27,7 @@ pub mod amino;
 pub mod amount;
 pub mod decode;
 pub mod error;
+pub mod json;
 pub mod msg;
 pub mod proto;
 pub mod tx;
@@ -33,6 +35,10 @@ pub mod tx;
 pub use amount::{fee_from_gas, validate_amount, validate_denom, Coin};
 pub use decode::{decode_direct_sign_doc, DecodedMsg, DecodedTx};
 pub use error::{CosmosError, Result};
+pub use json::{
+    fee_from_json, msg_from_proto_json, msg_to_proto_json, msgs_from_json, msgs_to_json,
+    sign_mode_from_str, MAX_MSGS,
+};
 pub use msg::{Height, Msg, VoteOption};
 pub use tx::{
     adr36_payload_is_safe, adr36_sign_bytes, adr36_sign_doc, Fee, SignMode, SignerData,
