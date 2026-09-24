@@ -32,17 +32,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      - name: Install wasm-bindgen and wasm-opt
-        run: |
-          cargo install wasm-bindgen-cli --locked --version 0.2.100
-          sudo apt-get update && sudo apt-get install -y binaryen
+      # scripts/build-wasm.sh installs the wasm-bindgen CLI that matches Cargo.lock.
+      - name: Install wasm-opt
+        run: sudo apt-get update && sudo apt-get install -y binaryen
 
       - name: Verify
         env:
