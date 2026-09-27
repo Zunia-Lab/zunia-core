@@ -142,6 +142,24 @@ pub fn validate_address(address: &str, expected_prefix: &str) -> Result<DecodedA
     Ok(decoded)
 }
 
+/// A CosmWasm contract address on `expected_prefix`.
+///
+/// Account addresses are 20 bytes. A contract is the same bech32 prefix with a
+/// 32-byte payload, which is what `wasmd` derives. Checking a contract with
+/// [`validate_address`] rejects every `MsgExecuteContract`, including a swap
+/// the user is holding the coins for. This does not accept an arbitrary length:
+/// 20 bytes covers the rare account-style contract, 32 bytes the canonical one.
+pub fn validate_contract_address(address: &str, expected_prefix: &str) -> Result<()> {
+    let (hrp, data) = bech32::decode(address).map_err(|_| KernelError::InvalidAddress)?;
+    if hrp.to_lowercase() != expected_prefix.to_lowercase() {
+        return Err(KernelError::InvalidAddress);
+    }
+    if data.len() != 20 && data.len() != 32 {
+        return Err(KernelError::InvalidAddress);
+    }
+    Ok(())
+}
+
 /// Re-encodes an address under a different prefix.
 ///
 /// Useful for showing the same account across chains, and for the interchain accounts case.
@@ -369,6 +387,27 @@ mod tests {
             validate_address(&cosmos, "osmo").unwrap_err(),
             KernelError::InvalidAddress,
             "a cosmos address must not validate on osmosis"
+        );
+    }
+
+    #[test]
+    fn contract_address_is_32_bytes_on_the_same_prefix() {
+        // Osmosis crosschain-swaps. A 20-byte check rejects it, and then every
+        // swap the user signs on Osmosis fails before the key is used.
+        let contract = "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs";
+        assert!(validate_contract_address(contract, "osmo").is_ok());
+        assert!(validate_contract_address(contract, "OSMO").is_ok());
+        assert_eq!(
+            validate_contract_address(contract, "cosmos").unwrap_err(),
+            KernelError::InvalidAddress
+        );
+        assert!(validate_address(contract, "osmo").is_err());
+
+        let account = AccountId::from_bytes([7u8; 20]).to_bech32("osmo").unwrap();
+        assert!(validate_contract_address(&account, "osmo").is_ok());
+        assert_eq!(
+            validate_contract_address(&account, "cosmos").unwrap_err(),
+            KernelError::InvalidAddress
         );
     }
 

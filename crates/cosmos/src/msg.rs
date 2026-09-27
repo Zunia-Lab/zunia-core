@@ -605,7 +605,8 @@ impl Msg {
                 sender, contract, ..
             } => {
                 check(sender, prefix)?;
-                check(contract, prefix)?;
+                // The contract is 32 bytes. The sender stays a 20-byte account.
+                zunia_kernel::validate_contract_address(contract, prefix)?;
             }
         }
         Ok(())
@@ -928,6 +929,28 @@ mod tests {
         };
         assert_eq!(
             bad.validate_addresses("cosmos").unwrap_err(),
+            CosmosError::Address
+        );
+    }
+
+    #[test]
+    fn execute_contract_accepts_a_wasm_contract_on_the_same_chain() {
+        let msg = Msg::ExecuteContract {
+            sender: "osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8".to_owned(),
+            contract: "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs".to_owned(),
+            msg: br#"{"osmosis_swap":{}}"#.to_vec(),
+            funds: vec![Coin::new("uosmo", "1").unwrap()],
+        };
+        assert!(msg.validate_addresses("osmo").is_ok());
+
+        let wrong_chain = Msg::ExecuteContract {
+            sender: "osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8".to_owned(),
+            contract: "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs".to_owned(),
+            msg: br#"{"osmosis_swap":{}}"#.to_vec(),
+            funds: vec![],
+        };
+        assert_eq!(
+            wrong_chain.validate_addresses("cosmos").unwrap_err(),
             CosmosError::Address
         );
     }
