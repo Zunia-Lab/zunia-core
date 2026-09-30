@@ -121,6 +121,11 @@ impl Account {
         sign::sign_cosmos(&self.key, sign_bytes)
     }
 
+    /// Signs `eth-key-sign` bytes: keccak256 then secp256k1, low-s normalised.
+    pub fn sign_eth_secp256k1(&self, sign_bytes: &[u8]) -> Result<Signature> {
+        sign::sign_eth_secp256k1(&self.key, sign_bytes)
+    }
+
     pub fn key(&self) -> &ExtendedKey {
         &self.key
     }

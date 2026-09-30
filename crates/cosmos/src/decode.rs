@@ -577,6 +577,7 @@ mod tests {
             account_number: 12345,
             sequence: 7,
             public_key: vec![2u8; 33],
+            eth_pub_key_type_url: None,
             eth_key_type: false,
         }
     }

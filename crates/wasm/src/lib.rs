@@ -194,9 +194,14 @@ pub fn sign_cosmos(
     account_index: u32,
     sign_bytes_hex: &str,
 ) -> Result<String, JsValue> {
-    let account = derive_account(phrase, passphrase, chain_json, account_index).map_err(err)?;
+    let chain = ChainInfo::from_json(chain_json).map_err(err)?;
+    let account = derive_for_chain(phrase, passphrase, &chain, account_index).map_err(err)?;
     let bytes = decode_hex("sign bytes", sign_bytes_hex).map_err(err)?;
-    let signature = account.sign_cosmos(&bytes).map_err(err)?;
+    let signature = if chain.uses_eth_key_sign() {
+        account.sign_eth_secp256k1(&bytes).map_err(err)?
+    } else {
+        account.sign_cosmos(&bytes).map_err(err)?
+    };
     Ok(hex::encode(signature.as_bytes()))
 }
 
@@ -257,6 +262,7 @@ pub fn build_bank_send_direct(
         sequence,
         public_key: pubkey,
         eth_key_type,
+        eth_pub_key_type_url: None,
     };
     Ok(hex::encode(
         tx.sign_bytes(&signer, SignMode::Direct).map_err(err)?,
@@ -399,7 +405,9 @@ fn mode_name(mode: SignMode) -> &'static str {
 /// The public key is required to be 33 bytes here rather than at broadcast: an empty or
 /// truncated key still encodes into a `SignerInfo`, and the chain's complaint about it arrives
 /// as "unauthorized" long after the user approved a prompt that looked correct.
-fn signing_request(
+///
+/// `eth_pub_key_type_url` is the chain document's override. Absent means the Ethermint URL.
+fn signing_request_with_url(
     chain_id: &str,
     msgs_json: &str,
     fee_json: &str,
@@ -408,6 +416,7 @@ fn signing_request(
     sequence: u64,
     public_key_hex: &str,
     eth_key_type: bool,
+    eth_pub_key_type_url: Option<String>,
 ) -> BindingResult<(UnsignedTx, SignerData)> {
     let msgs = msgs_from_json(msgs_json)?;
     let fee = fee_from_json(fee_json)?;
@@ -418,8 +427,15 @@ fn signing_request(
         sequence,
         public_key: decode_hex_exact("public key", public_key_hex, PUBLIC_KEY_LEN)?,
         eth_key_type,
+        eth_pub_key_type_url: nonempty_type_url(eth_pub_key_type_url),
     };
     Ok((tx, signer))
+}
+
+/// Drops a blank type URL so the Ethermint default stays in force.
+fn nonempty_type_url(url: Option<String>) -> Option<String> {
+    url.map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 /// The bytes the kernel must sign, hex encoded.
@@ -443,8 +459,9 @@ pub fn build_sign_bytes(
     public_key_hex: &str,
     eth_key_type: bool,
     mode: &str,
+    eth_pub_key_type_url: Option<String>,
 ) -> Result<String, JsValue> {
-    sign_bytes_hex(
+    sign_bytes_hex_with_url(
         chain_id,
         msgs_json,
         fee_json,
@@ -454,10 +471,12 @@ pub fn build_sign_bytes(
         public_key_hex,
         eth_key_type,
         mode,
+        eth_pub_key_type_url,
     )
     .map_err(err)
 }
 
+#[cfg(test)]
 fn sign_bytes_hex(
     chain_id: &str,
     msgs_json: &str,
@@ -469,8 +488,7 @@ fn sign_bytes_hex(
     eth_key_type: bool,
     mode: &str,
 ) -> BindingResult<String> {
-    let mode = parse_mode(mode)?;
-    let (tx, signer) = signing_request(
+    sign_bytes_hex_with_url(
         chain_id,
         msgs_json,
         fee_json,
@@ -479,6 +497,34 @@ fn sign_bytes_hex(
         sequence,
         public_key_hex,
         eth_key_type,
+        mode,
+        None,
+    )
+}
+
+fn sign_bytes_hex_with_url(
+    chain_id: &str,
+    msgs_json: &str,
+    fee_json: &str,
+    memo: &str,
+    account_number: u64,
+    sequence: u64,
+    public_key_hex: &str,
+    eth_key_type: bool,
+    mode: &str,
+    eth_pub_key_type_url: Option<String>,
+) -> BindingResult<String> {
+    let mode = parse_mode(mode)?;
+    let (tx, signer) = signing_request_with_url(
+        chain_id,
+        msgs_json,
+        fee_json,
+        memo,
+        account_number,
+        sequence,
+        public_key_hex,
+        eth_key_type,
+        eth_pub_key_type_url,
     )?;
     Ok(hex::encode(tx.sign_bytes(&signer, mode)?))
 }
@@ -502,8 +548,9 @@ pub fn assemble_tx_raw(
     eth_key_type: bool,
     mode: &str,
     signature_hex: &str,
+    eth_pub_key_type_url: Option<String>,
 ) -> Result<String, JsValue> {
-    tx_raw_hex(
+    tx_raw_hex_with_url(
         chain_id,
         msgs_json,
         fee_json,
@@ -514,10 +561,12 @@ pub fn assemble_tx_raw(
         eth_key_type,
         mode,
         signature_hex,
+        eth_pub_key_type_url,
     )
     .map_err(err)
 }
 
+#[cfg(test)]
 fn tx_raw_hex(
     chain_id: &str,
     msgs_json: &str,
@@ -530,9 +579,7 @@ fn tx_raw_hex(
     mode: &str,
     signature_hex: &str,
 ) -> BindingResult<String> {
-    let mode = parse_mode(mode)?;
-    let signature = decode_hex_exact("signature", signature_hex, SIGNATURE_LEN)?;
-    let (tx, signer) = signing_request(
+    tx_raw_hex_with_url(
         chain_id,
         msgs_json,
         fee_json,
@@ -541,6 +588,37 @@ fn tx_raw_hex(
         sequence,
         public_key_hex,
         eth_key_type,
+        mode,
+        signature_hex,
+        None,
+    )
+}
+
+fn tx_raw_hex_with_url(
+    chain_id: &str,
+    msgs_json: &str,
+    fee_json: &str,
+    memo: &str,
+    account_number: u64,
+    sequence: u64,
+    public_key_hex: &str,
+    eth_key_type: bool,
+    mode: &str,
+    signature_hex: &str,
+    eth_pub_key_type_url: Option<String>,
+) -> BindingResult<String> {
+    let mode = parse_mode(mode)?;
+    let signature = decode_hex_exact("signature", signature_hex, SIGNATURE_LEN)?;
+    let (tx, signer) = signing_request_with_url(
+        chain_id,
+        msgs_json,
+        fee_json,
+        memo,
+        account_number,
+        sequence,
+        public_key_hex,
+        eth_key_type,
+        eth_pub_key_type_url,
     )?;
     Ok(hex::encode(tx.into_tx_raw(&signer, mode, &signature)?))
 }
@@ -564,8 +642,9 @@ pub fn build_simulate_tx(
     sequence: u64,
     public_key_hex: &str,
     eth_key_type: bool,
+    eth_pub_key_type_url: Option<String>,
 ) -> Result<String, JsValue> {
-    simulate_tx_hex(
+    simulate_tx_hex_with_url(
         chain_id,
         msgs_json,
         fee_json,
@@ -574,10 +653,12 @@ pub fn build_simulate_tx(
         sequence,
         public_key_hex,
         eth_key_type,
+        eth_pub_key_type_url,
     )
     .map_err(err)
 }
 
+#[cfg(test)]
 fn simulate_tx_hex(
     chain_id: &str,
     msgs_json: &str,
@@ -588,7 +669,7 @@ fn simulate_tx_hex(
     public_key_hex: &str,
     eth_key_type: bool,
 ) -> BindingResult<String> {
-    let (tx, signer) = signing_request(
+    simulate_tx_hex_with_url(
         chain_id,
         msgs_json,
         fee_json,
@@ -597,6 +678,31 @@ fn simulate_tx_hex(
         sequence,
         public_key_hex,
         eth_key_type,
+        None,
+    )
+}
+
+fn simulate_tx_hex_with_url(
+    chain_id: &str,
+    msgs_json: &str,
+    fee_json: &str,
+    memo: &str,
+    account_number: u64,
+    sequence: u64,
+    public_key_hex: &str,
+    eth_key_type: bool,
+    eth_pub_key_type_url: Option<String>,
+) -> BindingResult<String> {
+    let (tx, signer) = signing_request_with_url(
+        chain_id,
+        msgs_json,
+        fee_json,
+        memo,
+        account_number,
+        sequence,
+        public_key_hex,
+        eth_key_type,
+        eth_pub_key_type_url,
     )?;
     Ok(hex::encode(tx.into_tx_raw(
         &signer,
@@ -685,6 +791,7 @@ fn signed_tx_hex(
         // transaction advertises, the second only decides how the address is derived, and a
         // chain can carry one without the other.
         eth_key_type: chain.uses_eth_key_sign(),
+        eth_pub_key_type_url: chain.eth_pub_key_type_url().map(str::to_owned),
     };
     Ok(hex::encode(zunia_cosmos::sign_tx(
         &account, &tx, &signer, mode,
@@ -731,8 +838,9 @@ pub fn preview_tx(
     public_key_hex: &str,
     eth_key_type: bool,
     mode: &str,
+    eth_pub_key_type_url: Option<String>,
 ) -> Result<String, JsValue> {
-    preview_json(
+    preview_json_with_url(
         chain_id,
         msgs_json,
         fee_json,
@@ -742,10 +850,12 @@ pub fn preview_tx(
         public_key_hex,
         eth_key_type,
         mode,
+        eth_pub_key_type_url,
     )
     .map_err(err)
 }
 
+#[cfg(test)]
 fn preview_json(
     chain_id: &str,
     msgs_json: &str,
@@ -757,8 +867,7 @@ fn preview_json(
     eth_key_type: bool,
     mode: &str,
 ) -> BindingResult<String> {
-    let mode = parse_mode(mode)?;
-    let (tx, signer) = signing_request(
+    preview_json_with_url(
         chain_id,
         msgs_json,
         fee_json,
@@ -767,6 +876,34 @@ fn preview_json(
         sequence,
         public_key_hex,
         eth_key_type,
+        mode,
+        None,
+    )
+}
+
+fn preview_json_with_url(
+    chain_id: &str,
+    msgs_json: &str,
+    fee_json: &str,
+    memo: &str,
+    account_number: u64,
+    sequence: u64,
+    public_key_hex: &str,
+    eth_key_type: bool,
+    mode: &str,
+    eth_pub_key_type_url: Option<String>,
+) -> BindingResult<String> {
+    let mode = parse_mode(mode)?;
+    let (tx, signer) = signing_request_with_url(
+        chain_id,
+        msgs_json,
+        fee_json,
+        memo,
+        account_number,
+        sequence,
+        public_key_hex,
+        eth_key_type,
+        eth_pub_key_type_url,
     )?;
     let preview = tx.preview(&signer, mode)?;
     Ok(render_preview(&tx, &preview).to_string())

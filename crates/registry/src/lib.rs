@@ -99,6 +99,10 @@ pub struct ChainInfo {
     pub stake_currency: Option<Currency>,
     #[serde(default)]
     pub features: Vec<String>,
+    /// Protobuf type URL for an `ethsecp256k1` public key, when it is not the
+    /// Ethermint default. Injective sets `/injective.crypto.v1beta1.ethsecp256k1.PubKey`.
+    #[serde(rename = "ethPubKeyTypeUrl", default, skip_serializing_if = "Option::is_none")]
+    pub eth_pub_key_type_url: Option<String>,
 }
 
 /// Why a chain descriptor was rejected.
@@ -206,6 +210,17 @@ impl ChainInfo {
     /// True if signing must advertise the `ethsecp256k1` public key type.
     pub fn uses_eth_key_sign(&self) -> bool {
         self.has_feature(features::ETH_KEY_SIGN)
+    }
+
+    /// Type URL advertised for an `eth-key-sign` public key.
+    ///
+    /// `None` means the Ethermint default. A chain such as Injective sets this
+    /// because the key bytes are the same and only the type URL differs.
+    pub fn eth_pub_key_type_url(&self) -> Option<&str> {
+        self.eth_pub_key_type_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
     }
 
     pub fn supports_cosmwasm(&self) -> bool {
@@ -417,6 +432,21 @@ mod tests {
         assert_eq!(chain.address_scheme(), AddressScheme::Ethermint);
         assert!(chain.uses_eth_key_sign());
         assert_eq!(chain.derivation_path(0, 0).to_string(), "m/44'/60'/0'/0/0");
+    }
+
+    #[test]
+    fn eth_pub_key_type_url_is_optional_chain_data() {
+        let plain = ChainInfo::from_json(INJECTIVE).unwrap();
+        assert_eq!(plain.eth_pub_key_type_url(), None);
+        let json = INJECTIVE.replace(
+            r#""features":"#,
+            r#""ethPubKeyTypeUrl": "/injective.crypto.v1beta1.ethsecp256k1.PubKey", "features":"#,
+        );
+        let chain = ChainInfo::from_json(&json).unwrap();
+        assert_eq!(
+            chain.eth_pub_key_type_url(),
+            Some("/injective.crypto.v1beta1.ethsecp256k1.PubKey")
+        );
     }
 
     #[test]

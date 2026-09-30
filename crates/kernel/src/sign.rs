@@ -1,6 +1,7 @@
 use k256::ecdsa::signature::hazmat::PrehashSigner;
 use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
+use sha3::Keccak256;
 
 use crate::derive::{Curve, ExtendedKey};
 use crate::error::{KernelError, Result};
@@ -81,6 +82,15 @@ pub fn sign_digest_secp256k1(key: &ExtendedKey, digest: &[u8; 32]) -> Result<Sig
 /// Hashes with SHA-256 then signs. The Cosmos signing path.
 pub fn sign_cosmos(key: &ExtendedKey, sign_bytes: &[u8]) -> Result<Signature> {
     let digest: [u8; 32] = Sha256::digest(sign_bytes).into();
+    sign_digest_secp256k1(key, &digest)
+}
+
+/// Hashes with keccak256 then signs. The `eth-key-sign` path.
+///
+/// Ethermint and Injective verify `keccak256(sign_bytes)`, not SHA-256. The
+/// public key bytes stay the 33-byte compressed secp256k1 key.
+pub fn sign_eth_secp256k1(key: &ExtendedKey, sign_bytes: &[u8]) -> Result<Signature> {
+    let digest: [u8; 32] = Keccak256::digest(sign_bytes).into();
     sign_digest_secp256k1(key, &digest)
 }
 

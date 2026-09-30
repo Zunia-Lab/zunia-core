@@ -140,6 +140,7 @@ fn signer_from(vectors: &Value, public_key: Vec<u8>) -> SignerData {
         sequence: vectors["signer"]["sequence"].as_u64().unwrap(),
         public_key,
         eth_key_type: false,
+        eth_pub_key_type_url: None,
     }
 }
 

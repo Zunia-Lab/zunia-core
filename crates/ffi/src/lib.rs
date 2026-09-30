@@ -45,8 +45,8 @@ use std::os::raw::c_char;
 use std::ptr;
 
 use zunia_cosmos::{
-    decode_direct_sign_doc, fee_from_json, msgs_from_json, msgs_to_json, sign_mode_from_str, Coin,
-    Fee, Msg, SignMode, SignerData, SigningPreview, UnsignedTx,
+    decode_direct_sign_doc, fee_from_json, msgs_from_json, msgs_to_json, sign_mode_from_str,
+    sign_tx, Coin, Fee, Msg, SignMode, SignerData, SigningPreview, UnsignedTx,
 };
 use zunia_kernel::{
     Account, Curve, DerivationPath, KdfParams, KeyringEnvelope, WordCount, ZuniaMnemonic,
@@ -252,10 +252,14 @@ pub extern "C" fn zunia_sign_cosmos(
         let passphrase = optional_cstr(passphrase)?;
         let chain_json = from_cstr(chain_json)?;
         let sign_bytes_hex = from_cstr(sign_bytes_hex)?;
-        let (account, _chain) = derive_account(phrase, passphrase, chain_json, account_index)?;
+        let (account, chain) = derive_account(phrase, passphrase, chain_json, account_index)?;
         let bytes =
             hex::decode(sign_bytes_hex.trim_start_matches("0x")).map_err(|e| e.to_string())?;
-        let signature = account.sign_cosmos(&bytes).map_err(|e| e.to_string())?;
+        let signature = if chain.uses_eth_key_sign() {
+            account.sign_eth_secp256k1(&bytes).map_err(|e| e.to_string())?
+        } else {
+            account.sign_cosmos(&bytes).map_err(|e| e.to_string())?
+        };
         Ok(hex::encode(signature.as_bytes()))
     })()
     .map(to_cstring)
@@ -372,6 +376,10 @@ fn signer_data(
         sequence,
         public_key,
         eth_key_type,
+        // Hosts that only pass the boolean get the Ethermint type URL. `zunia_sign_tx`
+        // reads `ethPubKeyTypeUrl` off the chain document, which is how Injective
+        // advertises its own key type without a second argument.
+        eth_pub_key_type_url: None,
     })
 }
 
@@ -610,15 +618,11 @@ pub extern "C" fn zunia_sign_tx(
             // `eth-key-sign`, not `eth-address-gen`: the two flags are independent in the
             // registry and this one is what decides the public key type URL inside auth_info.
             eth_key_type: chain.uses_eth_key_sign(),
+            eth_pub_key_type_url: chain.eth_pub_key_type_url().map(str::to_owned),
         };
 
-        let sign_bytes = tx.sign_bytes(&signer, mode).map_err(|e| e.to_string())?;
-        let signature = account
-            .sign_cosmos(&sign_bytes)
-            .map_err(|e| e.to_string())?;
         Ok(hex::encode(
-            tx.into_tx_raw(&signer, mode, signature.as_bytes())
-                .map_err(|e| e.to_string())?,
+            sign_tx(&account, &tx, &signer, mode).map_err(|e| e.to_string())?,
         ))
     })()
     .map(to_cstring)

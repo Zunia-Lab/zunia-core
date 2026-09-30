@@ -86,6 +86,12 @@ impl Fee {
     }
 }
 
+/// Protobuf type URL for an Ethermint `ethsecp256k1` public key.
+pub const ETHERMINT_PUBKEY_TYPE_URL: &str = "/ethermint.crypto.v1.ethsecp256k1.PubKey";
+
+/// Protobuf type URL for a Cosmos `secp256k1` public key.
+pub const COSMOS_PUBKEY_TYPE_URL: &str = "/cosmos.crypto.secp256k1.PubKey";
+
 /// Everything needed to build and sign a transaction.
 #[derive(Debug, Clone)]
 pub struct SignerData {
@@ -94,27 +100,50 @@ pub struct SignerData {
     pub sequence: u64,
     /// Compressed secp256k1 public key, 33 bytes.
     pub public_key: Vec<u8>,
-    /// True on Ethermint chains, which advertise `ethsecp256k1` instead of `secp256k1`.
+    /// True when the chain verifies an Ethereum signature (`eth-key-sign`).
+    ///
+    /// This selects keccak256 of the sign bytes, and an `ethsecp256k1` public key,
+    /// instead of SHA-256 and `/cosmos.crypto.secp256k1.PubKey`.
     pub eth_key_type: bool,
+    /// Overrides the Ethermint type URL when `eth_key_type` is set.
+    ///
+    /// Absent means [`ETHERMINT_PUBKEY_TYPE_URL`]. Injective sets
+    /// `/injective.crypto.v1beta1.ethsecp256k1.PubKey`. The 33-byte key is the same
+    /// either way; the type URL is what tells the chain which signature to check.
+    pub eth_pub_key_type_url: Option<String>,
 }
 
 impl SignerData {
     /// The protobuf `Any` type URL for this signer's public key.
-    pub fn pubkey_type_url(&self) -> &'static str {
-        if self.eth_key_type {
-            "/ethermint.crypto.v1.ethsecp256k1.PubKey"
-        } else {
-            "/cosmos.crypto.secp256k1.PubKey"
+    pub fn pubkey_type_url(&self) -> &str {
+        if !self.eth_key_type {
+            return COSMOS_PUBKEY_TYPE_URL;
         }
+        self.eth_pub_key_type_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .unwrap_or(ETHERMINT_PUBKEY_TYPE_URL)
     }
 
     /// The Amino registry name for this signer's public key.
-    pub fn pubkey_amino_type(&self) -> &'static str {
-        if self.eth_key_type {
-            "ethermint/PubKeyEthSecp256k1"
-        } else {
-            "tendermint/PubKeySecp256k1"
+    ///
+    /// Taken from the first segment of the type URL, so
+    /// `/injective.crypto.v1beta1.ethsecp256k1.PubKey` becomes
+    /// `injective/PubKeyEthSecp256k1` and the Ethermint URL stays
+    /// `ethermint/PubKeyEthSecp256k1`.
+    pub fn pubkey_amino_type(&self) -> String {
+        if !self.eth_key_type {
+            return "tendermint/PubKeySecp256k1".to_owned();
         }
+        let module = self
+            .pubkey_type_url()
+            .trim_start_matches('/')
+            .split('.')
+            .next()
+            .filter(|segment| !segment.is_empty())
+            .unwrap_or("ethermint");
+        format!("{module}/PubKeyEthSecp256k1")
     }
 
     fn encode_pubkey_any(&self) -> Vec<u8> {
@@ -419,6 +448,7 @@ mod tests {
             sequence: 7,
             public_key: hex::decode(PUBKEY).unwrap(),
             eth_key_type: false,
+            eth_pub_key_type_url: None,
         }
     }
 
@@ -535,6 +565,25 @@ mod tests {
         assert_ne!(
             tx().direct_sign_bytes(&eth).unwrap(),
             tx().direct_sign_bytes(&signer()).unwrap()
+        );
+    }
+
+    #[test]
+    fn injective_signers_advertise_their_own_key_type() {
+        let mut eth = signer();
+        eth.eth_key_type = true;
+        eth.eth_pub_key_type_url =
+            Some("/injective.crypto.v1beta1.ethsecp256k1.PubKey".to_owned());
+        assert_eq!(
+            eth.pubkey_type_url(),
+            "/injective.crypto.v1beta1.ethsecp256k1.PubKey"
+        );
+        assert_eq!(eth.pubkey_amino_type(), "injective/PubKeyEthSecp256k1");
+        let mut ether = signer();
+        ether.eth_key_type = true;
+        assert_ne!(
+            tx().direct_sign_bytes(&eth).unwrap(),
+            tx().direct_sign_bytes(&ether).unwrap()
         );
     }
 

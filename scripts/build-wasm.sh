@@ -181,30 +181,32 @@ export const buildBankSendDirect = (
 
 export const buildSignBytes = (
   chainId, msgsJson, feeJson, memo, accountNumber, sequence, publicKeyHex, ethKeyType, mode,
+  ethPubKeyTypeUrl,
 ) =>
   raw.build_sign_bytes(
     chainId, msgsJson, feeJson, memo,
     u64(accountNumber, "accountNumber"), u64(sequence, "sequence"),
-    publicKeyHex, ethKeyType, mode,
+    publicKeyHex, ethKeyType, mode, ethPubKeyTypeUrl,
   );
 
 export const assembleTxRaw = (
   chainId, msgsJson, feeJson, memo, accountNumber, sequence, publicKeyHex, ethKeyType,
-  mode, signatureHex,
+  mode, signatureHex, ethPubKeyTypeUrl,
 ) =>
   raw.assemble_tx_raw(
     chainId, msgsJson, feeJson, memo,
     u64(accountNumber, "accountNumber"), u64(sequence, "sequence"),
-    publicKeyHex, ethKeyType, mode, signatureHex,
+    publicKeyHex, ethKeyType, mode, signatureHex, ethPubKeyTypeUrl,
   );
 
 export const buildSimulateTx = (
   chainId, msgsJson, feeJson, memo, accountNumber, sequence, publicKeyHex, ethKeyType,
+  ethPubKeyTypeUrl,
 ) =>
   raw.build_simulate_tx(
     chainId, msgsJson, feeJson, memo,
     u64(accountNumber, "accountNumber"), u64(sequence, "sequence"),
-    publicKeyHex, ethKeyType,
+    publicKeyHex, ethKeyType, ethPubKeyTypeUrl,
   );
 
 export const signTx = (
@@ -219,12 +221,13 @@ export const signTx = (
 /** Parsed, because `preview_tx` returns JSON text to avoid serde-wasm-bindgen's `Map`. */
 export const previewTx = (
   chainId, msgsJson, feeJson, memo, accountNumber, sequence, publicKeyHex, ethKeyType, mode,
+  ethPubKeyTypeUrl,
 ) =>
   JSON.parse(
     raw.preview_tx(
       chainId, msgsJson, feeJson, memo,
       u64(accountNumber, "accountNumber"), u64(sequence, "sequence"),
-      publicKeyHex, ethKeyType, mode,
+      publicKeyHex, ethKeyType, mode, ethPubKeyTypeUrl,
     ),
   );
 EOF
@@ -390,6 +393,7 @@ export function buildSignBytes(
   publicKeyHex: string,
   ethKeyType: boolean,
   mode: SignMode,
+  ethPubKeyTypeUrl?: string,
 ): string;
 
 /**
@@ -409,6 +413,7 @@ export function assembleTxRaw(
   ethKeyType: boolean,
   mode: SignMode,
   signatureHex: string,
+  ethPubKeyTypeUrl?: string,
 ): string;
 
 /**
@@ -424,6 +429,7 @@ export function buildSimulateTx(
   sequence: U64Like,
   publicKeyHex: string,
   ethKeyType: boolean,
+  ethPubKeyTypeUrl?: string,
 ): string;
 
 /**
@@ -458,6 +464,7 @@ export function previewTx(
   publicKeyHex: string,
   ethKeyType: boolean,
   mode: SignMode,
+  ethPubKeyTypeUrl?: string,
 ): SigningPreview;
 EOF
 

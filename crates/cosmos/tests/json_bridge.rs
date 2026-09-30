@@ -139,6 +139,7 @@ fn signer_from(vectors: &Value) -> SignerData {
         sequence: vectors["signer"]["sequence"].as_u64().unwrap(),
         public_key: hex::decode(str_at(vectors, &["key", "pubkey_compressed_hex"])).unwrap(),
         eth_key_type: false,
+        eth_pub_key_type_url: None,
     }
 }
 

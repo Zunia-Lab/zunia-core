@@ -60,7 +60,13 @@ pub fn sign_tx(
     mode: SignMode,
 ) -> Result<Vec<u8>> {
     let sign_bytes = tx.sign_bytes(signer, mode)?;
-    let signature = account.sign_cosmos(&sign_bytes)?;
+    // `eth-key-sign` chains verify keccak256 of these bytes. A SHA-256 signature
+    // is a valid secp256k1 signature over a digest the chain will not check.
+    let signature = if signer.eth_key_type {
+        account.sign_eth_secp256k1(&sign_bytes)?
+    } else {
+        account.sign_cosmos(&sign_bytes)?
+    };
     tx.into_tx_raw(signer, mode, signature.as_bytes())
 }
 
@@ -122,7 +128,26 @@ mod tests {
             sequence: 7,
             public_key: account.public_key().unwrap(),
             eth_key_type: false,
+            eth_pub_key_type_url: None,
         }
+    }
+
+    #[test]
+    fn eth_key_sign_hashes_with_keccak_not_sha256() {
+        let account = account();
+        let mut signer = signer(&account);
+        signer.eth_key_type = true;
+        let tx = transfer(&account);
+        let sign_bytes = tx.sign_bytes(&signer, SignMode::Direct).unwrap();
+        let signed = sign_tx(&account, &tx, &signer, SignMode::Direct).unwrap();
+        let sha = account.sign_cosmos(&sign_bytes).unwrap();
+        let keccak = account.sign_eth_secp256k1(&sign_bytes).unwrap();
+        assert_ne!(sha.as_bytes(), keccak.as_bytes());
+        assert_eq!(
+            signed,
+            tx.into_tx_raw(&signer, SignMode::Direct, keccak.as_bytes())
+                .unwrap()
+        );
     }
 
     fn transfer(account: &Account) -> UnsignedTx {
