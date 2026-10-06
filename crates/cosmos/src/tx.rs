@@ -572,8 +572,7 @@ mod tests {
     fn injective_signers_advertise_their_own_key_type() {
         let mut eth = signer();
         eth.eth_key_type = true;
-        eth.eth_pub_key_type_url =
-            Some("/injective.crypto.v1beta1.ethsecp256k1.PubKey".to_owned());
+        eth.eth_pub_key_type_url = Some("/injective.crypto.v1beta1.ethsecp256k1.PubKey".to_owned());
         assert_eq!(
             eth.pubkey_type_url(),
             "/injective.crypto.v1beta1.ethsecp256k1.PubKey"

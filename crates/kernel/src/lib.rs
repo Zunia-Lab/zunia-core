@@ -42,8 +42,7 @@ pub mod sign;
 
 pub use address::{
     convert_prefix, decode_bech32, solana_address, validate_address, validate_contract_address,
-    validate_eth_address,
-    AccountId, AddressScheme, DecodedAddress,
+    validate_eth_address, AccountId, AddressScheme, DecodedAddress,
 };
 pub use derive::{Curve, DerivationPath, ExtendedKey, HARDENED};
 pub use error::{KernelError, Result};

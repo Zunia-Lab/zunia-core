@@ -256,7 +256,9 @@ pub extern "C" fn zunia_sign_cosmos(
         let bytes =
             hex::decode(sign_bytes_hex.trim_start_matches("0x")).map_err(|e| e.to_string())?;
         let signature = if chain.uses_eth_key_sign() {
-            account.sign_eth_secp256k1(&bytes).map_err(|e| e.to_string())?
+            account
+                .sign_eth_secp256k1(&bytes)
+                .map_err(|e| e.to_string())?
         } else {
             account.sign_cosmos(&bytes).map_err(|e| e.to_string())?
         };

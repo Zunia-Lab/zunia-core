@@ -101,7 +101,11 @@ pub struct ChainInfo {
     pub features: Vec<String>,
     /// Protobuf type URL for an `ethsecp256k1` public key, when it is not the
     /// Ethermint default. Injective sets `/injective.crypto.v1beta1.ethsecp256k1.PubKey`.
-    #[serde(rename = "ethPubKeyTypeUrl", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "ethPubKeyTypeUrl",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub eth_pub_key_type_url: Option<String>,
 }
 
