@@ -442,6 +442,39 @@ for (const name of ["msg_swap_exact_amount_in", "msg_split_route_swap_exact_amou
   );
 }
 
+// 5c. decode_direct_tx never describes a singular field written twice: the chain keeps the last
+//     occurrence, so a reader that kept the first could show one recipient or message type while
+//     another executes. The two documents are the fuzz corpus's regression seeds; before the fix
+//     both read as an ordinary send, safe to sign.
+console.log("\ndecode_direct_tx and a singular field written twice");
+{
+  const seed = (name) =>
+    readFileSync(path.join(ROOT, "fuzz", "corpus", "tx_decoder", name)).toString("hex");
+  const golden = core.decodeDirectTx(caseNamed("msg_send").direct.sign_bytes_hex);
+  eq("the golden send is safe without blind signing", golden.safeWithoutBlindSigning, true);
+
+  const twoRecipients = core.decodeDirectTx(seed("regression_send_with_two_recipients"));
+  eq("a send with two recipients carries an unknown message", twoRecipients.hasUnknownMsgs, true);
+  eq("a send with two recipients is not safe without blind signing", twoRecipients.safeWithoutBlindSigning, false);
+  ok(
+    "a send with two recipients names neither",
+    twoRecipients.summaries[0].startsWith("UNKNOWN ACTION") && twoRecipients.addresses.length === 0,
+    JSON.stringify(twoRecipients.summaries),
+  );
+
+  let threw = null;
+  try {
+    core.decodeDirectTx(seed("regression_any_with_two_type_urls"));
+  } catch (error) {
+    threw = error;
+  }
+  ok(
+    "an Any naming two message types is refused outright",
+    threw instanceof Error,
+    threw ? `threw: ${threw.message}` : "decoded instead of throwing",
+  );
+}
+
 // 6. Numbers, not just BigInts. account_number and sequence come off a REST response as JSON
 //    numbers; the wasm boundary converts u64 with ToBigInt, which throws on a Number.
 console.log("\nu64 arguments accept what a REST response actually hands you");

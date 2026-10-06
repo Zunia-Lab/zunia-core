@@ -8,6 +8,23 @@
 //! is marked [`DecodedMsg::Unknown`], and the signing UI must refuse it unless the user has
 //! explicitly enabled blind signing. Failing loudly is the point. A decoder that guesses is
 //! worse than one that admits ignorance, because a wrong summary is a lie the user acts on.
+//!
+//! # A singular field written twice
+//!
+//! Protobuf permits a singular field to occur more than once, and the chain reads the last
+//! occurrence: gogoproto keeps the last value of a scalar, string or bytes field and merges
+//! repeated occurrences of an embedded message. A decoder that reads the first occurrence can
+//! therefore be shown one `MsgSend` recipient while the chain pays another, one fee while the
+//! chain charges another, or one message type in an `Any` while the chain runs another. No
+//! encoder writes a singular field twice, so this module never chooses between occurrences: every
+//! singular field it reads goes through [`find_unique_field`], and the singular fields it does
+//! not read, which the chain executes all the same, are checked with [`require_unique`].
+//!
+//! Where the duplicate sits decides the outcome. Inside a message body it makes that message
+//! [`DecodedMsg::Unknown`], like any other body the wallet cannot read, so the blind-signing gate
+//! closes and the rest of the transaction is still shown. Anywhere in the envelope around the
+//! messages (the `SignDoc`, the `TxBody`, an `Any`, the `AuthInfo`, a `SignerInfo` or the `Fee`)
+//! there is no message to name and no fee or memo to trust, so the whole document is refused.
 
 use serde_json::Value;
 
@@ -18,7 +35,7 @@ use crate::msg::{
     validate_split_route_swap_exact_amount_in, validate_swap_exact_amount_in, SwapAmountInRoute,
     SwapAmountInSplitRoute, VoteOption,
 };
-use crate::proto::{decode_fields, find_all, find_field, Field};
+use crate::proto::{decode_fields, find_all, find_unique_field, require_unique};
 
 /// One message from a transaction, decoded as far as this build can manage.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -271,20 +288,26 @@ impl DecodedTx {
 }
 
 /// Decodes `SIGN_MODE_DIRECT` sign bytes, meaning a serialised `cosmos.tx.v1beta1.SignDoc`.
+///
+/// Refuses the document outright when any singular field of the `SignDoc`, the `TxBody`, an
+/// `Any`, the `AuthInfo`, a `SignerInfo` or the `Fee` occurs more than once. See the module
+/// documentation.
 pub fn decode_direct_sign_doc(sign_bytes: &[u8]) -> Result<DecodedTx> {
     let fields = decode_fields(sign_bytes)?;
 
-    let body_bytes = find_field(&fields, 1)
+    // SignDoc: body_bytes 1, auth_info_bytes 2, chain_id 3 and account_number 4, all singular
+    // and all read.
+    let body_bytes = find_unique_field(&fields, 1)?
         .ok_or(CosmosError::SignDoc)?
         .as_bytes()?;
-    let auth_info_bytes = find_field(&fields, 2)
+    let auth_info_bytes = find_unique_field(&fields, 2)?
         .ok_or(CosmosError::SignDoc)?
         .as_bytes()?;
-    let chain_id = find_field(&fields, 3)
+    let chain_id = find_unique_field(&fields, 3)?
         .map(|v| v.as_string())
         .transpose()?
         .unwrap_or_default();
-    let account_number = find_field(&fields, 4)
+    let account_number = find_unique_field(&fields, 4)?
         .map(|v| v.as_varint())
         .transpose()?
         .unwrap_or(0);
@@ -295,12 +318,16 @@ pub fn decode_direct_sign_doc(sign_bytes: &[u8]) -> Result<DecodedTx> {
         return Err(CosmosError::ChainId);
     }
 
+    // TxBody: messages 1 and the extension options are repeated. memo 2 and timeout_height 3
+    // are read; unordered 4 and timeout_timestamp 5 are not shown, but they decide whether and
+    // until when the transaction can execute.
     let body = decode_fields(body_bytes)?;
-    let memo = find_field(&body, 2)
+    require_unique(&body, &[4, 5])?;
+    let memo = find_unique_field(&body, 2)?
         .map(|v| v.as_string())
         .transpose()?
         .unwrap_or_default();
-    let timeout_height = find_field(&body, 3)
+    let timeout_height = find_unique_field(&body, 3)?
         .map(|v| v.as_varint())
         .transpose()?
         .unwrap_or(0);
@@ -313,26 +340,34 @@ pub fn decode_direct_sign_doc(sign_bytes: &[u8]) -> Result<DecodedTx> {
         return Err(CosmosError::SignDoc);
     }
 
+    // AuthInfo: signer_infos 1 is repeated, fee 2 is read, and tip 3 is not shown but pays out.
     let auth_info = decode_fields(auth_info_bytes)?;
-    let sequence = match find_field(&auth_info, 1) {
-        Some(signer_info) => {
-            let signer_info = decode_fields(signer_info.as_bytes()?)?;
-            find_field(&signer_info, 3)
-                .map(|v| v.as_varint())
-                .transpose()?
-                .unwrap_or(0)
-        }
-        None => 0,
-    };
+    require_unique(&auth_info, &[3])?;
+    let mut sequence = None;
+    for signer_info in find_all(&auth_info, 1) {
+        // SignerInfo: public_key 1 and mode_info 2 are not shown but decide how the signature
+        // is checked; sequence 3 is read, from the first signer, who is the one signing here.
+        let signer_info = decode_fields(signer_info.as_bytes()?)?;
+        require_unique(&signer_info, &[1, 2])?;
+        let this_sequence = find_unique_field(&signer_info, 3)?
+            .map(|v| v.as_varint())
+            .transpose()?
+            .unwrap_or(0);
+        sequence.get_or_insert(this_sequence);
+    }
+    let sequence = sequence.unwrap_or(0);
 
-    let (fee, gas_limit) = match find_field(&auth_info, 2) {
+    let (fee, gas_limit) = match find_unique_field(&auth_info, 2)? {
         Some(fee_bytes) => {
+            // Fee: amount 1 is repeated and gas_limit 2 is read. payer 3 and granter 4 are not
+            // shown, but they decide who is charged.
             let fee_fields = decode_fields(fee_bytes.as_bytes()?)?;
+            require_unique(&fee_fields, &[3, 4])?;
             let mut coins = Vec::new();
             for coin in find_all(&fee_fields, 1) {
                 coins.push(decode_coin(coin.as_bytes()?)?);
             }
-            let gas = find_field(&fee_fields, 2)
+            let gas = find_unique_field(&fee_fields, 2)?
                 .map(|v| v.as_varint())
                 .transpose()?
                 .unwrap_or(0);
@@ -357,12 +392,16 @@ pub fn decode_direct_sign_doc(sign_bytes: &[u8]) -> Result<DecodedTx> {
 }
 
 /// Decodes a `google.protobuf.Any` holding a message.
+///
+/// A second `type_url` or `value` is an error for the whole document rather than an unknown
+/// message: with two type URLs the prompt would name one message while the chain ran the other,
+/// and there is no honest name to put on the result.
 fn decode_any(any_bytes: &[u8]) -> Result<DecodedMsg> {
     let fields = decode_fields(any_bytes)?;
-    let type_url = find_field(&fields, 1)
+    let type_url = find_unique_field(&fields, 1)?
         .ok_or(CosmosError::Decode)?
         .as_string()?;
-    let value = find_field(&fields, 2)
+    let value = find_unique_field(&fields, 2)?
         .map(|v| v.as_bytes().map(|b| b.to_vec()))
         .transpose()?
         .unwrap_or_default();
@@ -378,17 +417,29 @@ fn decode_any(any_bytes: &[u8]) -> Result<DecodedMsg> {
     }))
 }
 
+/// Decodes the body of a message whose type URL this build knows.
+///
+/// Every singular field read here goes through [`find_unique_field`], by way of `string_at`,
+/// `varint_at` and `coin_at`; repeated fields go through `coins_at` and [`find_all`]. An error
+/// anywhere, a duplicated singular field included, makes the caller show the message as
+/// [`DecodedMsg::Unknown`].
 fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
     let fields = decode_fields(value)?;
 
     let string_at = |tag: u32| -> Result<String> {
-        Ok(find_field(&fields, tag)
+        Ok(find_unique_field(&fields, tag)?
             .map(|v| v.as_string())
             .transpose()?
             .unwrap_or_default())
     };
+    let varint_at = |tag: u32| -> Result<u64> {
+        Ok(find_unique_field(&fields, tag)?
+            .map(|v| v.as_varint())
+            .transpose()?
+            .unwrap_or(0))
+    };
     let coin_at = |tag: u32| -> Result<Option<Coin>> {
-        match find_field(&fields, tag) {
+        match find_unique_field(&fields, tag)? {
             Some(v) => Ok(Some(decode_coin(v.as_bytes()?)?)),
             None => Ok(None),
         }
@@ -428,15 +479,12 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
             validator: string_at(2)?,
         },
         "/cosmos.gov.v1beta1.MsgVote" | "/cosmos.gov.v1.MsgVote" => {
-            let raw = find_field(&fields, 3)
-                .map(|v| v.as_varint())
-                .transpose()?
-                .unwrap_or(0);
+            // gov v1 adds metadata 4, which is not shown. v1beta1 has no field 4, and the chain
+            // refuses one as unknown, so checking it there costs nothing.
+            require_unique(&fields, &[4])?;
+            let raw = varint_at(3)?;
             DecodedMsg::Vote {
-                proposal_id: find_field(&fields, 1)
-                    .map(|v| v.as_varint())
-                    .transpose()?
-                    .unwrap_or(0),
+                proposal_id: varint_at(1)?,
                 voter: string_at(2)?,
                 option: match raw {
                     1 => Some(VoteOption::Yes),
@@ -449,15 +497,25 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
                 },
             }
         }
-        "/ibc.applications.transfer.v1.MsgTransfer" => DecodedMsg::IbcTransfer {
-            channel: string_at(2)?,
-            token: coin_at(3)?,
-            sender: string_at(4)?,
-            receiver: string_at(5)?,
-            memo: string_at(8)?,
-        },
+        "/ibc.applications.transfer.v1.MsgTransfer" => {
+            // Not shown, but they decide where the packet goes and when the escrow can be
+            // refunded: source_port 1, timeout_height 6 and timeout_timestamp 7.
+            require_unique(&fields, &[1, 7])?;
+            if let Some(height) = find_unique_field(&fields, 6)? {
+                // ibc.core.client.v1.Height: revision_number 1, revision_height 2. A height that
+                // does not decode at all is refused too, since the chain cannot decode it either.
+                require_unique(&decode_fields(height.as_bytes()?)?, &[1, 2])?;
+            }
+            DecodedMsg::IbcTransfer {
+                channel: string_at(2)?,
+                token: coin_at(3)?,
+                sender: string_at(4)?,
+                receiver: string_at(5)?,
+                memo: string_at(8)?,
+            }
+        }
         "/cosmwasm.wasm.v1.MsgExecuteContract" => {
-            let raw = find_field(&fields, 3)
+            let raw = find_unique_field(&fields, 3)?
                 .map(|v| v.as_bytes().map(|b| b.to_vec()))
                 .transpose()?
                 .unwrap_or_default();
@@ -475,15 +533,6 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
             }
         }
         "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn" => {
-            refuse_repeated(&fields, &[1, 3, 4])?;
-            let token_in = match find_field(&fields, 3) {
-                Some(coin) => {
-                    let bytes = coin.as_bytes()?;
-                    refuse_repeated(&decode_fields(bytes)?, &[1, 2])?;
-                    Some(decode_coin(bytes)?)
-                }
-                None => None,
-            };
             let mut routes = Vec::new();
             for hop in find_all(&fields, 2) {
                 routes.push(decode_hop(hop.as_bytes()?)?);
@@ -491,12 +540,12 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
             DecodedMsg::SwapExactAmountIn {
                 sender: string_at(1)?,
                 routes,
-                token_in,
+                token_in: coin_at(3)?,
+                // The field most worth forging in a swap: a respectable floor first, zero second.
                 token_out_min_amount: string_at(4)?,
             }
         }
         "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn" => {
-            refuse_repeated(&fields, &[1, 3, 4])?;
             let mut routes = Vec::new();
             for leg in find_all(&fields, 2) {
                 routes.push(decode_split_leg(leg.as_bytes()?)?);
@@ -648,34 +697,16 @@ fn is_complete(msg: &DecodedMsg) -> bool {
     addresses_present && specifics && local_addresses_are_bech32(msg)
 }
 
-/// Refuses a message in which a singular field appears more than once.
-///
-/// Protobuf lets a later occurrence of a singular field override an earlier one, and the chain
-/// decodes that way: the last value wins. [`find_field`] returns the first. A document carrying
-/// the same field twice could therefore show the user one value and execute another, and in a
-/// swap the field most worth forging is `token_out_min_amount`: a respectable floor first, zero
-/// second. No encoder emits a singular field twice, so refusing it costs nothing legitimate, and
-/// the message falls through to [`DecodedMsg::Unknown`].
-fn refuse_repeated(fields: &[Field], singular: &[u32]) -> Result<()> {
-    for tag in singular {
-        if fields.iter().filter(|field| field.tag == *tag).count() > 1 {
-            return Err(CosmosError::Decode);
-        }
-    }
-    Ok(())
-}
-
 /// `osmosis.poolmanager.v1beta1.SwapAmountInRoute`. An absent pool id reads as 0 and an absent
 /// denom as empty, both of which the swap rules refuse.
 fn decode_hop(bytes: &[u8]) -> Result<SwapAmountInRoute> {
     let fields = decode_fields(bytes)?;
-    refuse_repeated(&fields, &[1, 2])?;
     Ok(SwapAmountInRoute {
-        pool_id: find_field(&fields, 1)
+        pool_id: find_unique_field(&fields, 1)?
             .map(|v| v.as_varint())
             .transpose()?
             .unwrap_or(0),
-        token_out_denom: find_field(&fields, 2)
+        token_out_denom: find_unique_field(&fields, 2)?
             .map(|v| v.as_string())
             .transpose()?
             .unwrap_or_default(),
@@ -685,27 +716,28 @@ fn decode_hop(bytes: &[u8]) -> Result<SwapAmountInRoute> {
 /// `osmosis.poolmanager.v1beta1.SwapAmountInSplitRoute`.
 fn decode_split_leg(bytes: &[u8]) -> Result<SwapAmountInSplitRoute> {
     let fields = decode_fields(bytes)?;
-    refuse_repeated(&fields, &[2])?;
     let mut pools = Vec::new();
     for hop in find_all(&fields, 1) {
         pools.push(decode_hop(hop.as_bytes()?)?);
     }
     Ok(SwapAmountInSplitRoute {
         pools,
-        token_in_amount: find_field(&fields, 2)
+        token_in_amount: find_unique_field(&fields, 2)?
             .map(|v| v.as_string())
             .transpose()?
             .unwrap_or_default(),
     })
 }
 
+/// `cosmos.base.v1beta1.Coin`, wherever it appears: a fee, a send, a delegation, a swap input.
+/// Two amounts in one coin would show one figure while the chain moves the other.
 fn decode_coin(bytes: &[u8]) -> Result<Coin> {
     let fields = decode_fields(bytes)?;
-    let denom = find_field(&fields, 1)
+    let denom = find_unique_field(&fields, 1)?
         .map(|v| v.as_string())
         .transpose()?
         .unwrap_or_default();
-    let amount = find_field(&fields, 2)
+    let amount = find_unique_field(&fields, 2)?
         .map(|v| v.as_string())
         .transpose()?
         .unwrap_or_else(|| "0".to_owned());
@@ -1552,6 +1584,614 @@ mod tests {
             .message_always(3, &coin_bytes("uosmo", "9950000"))
             .string(4, "350000");
         assert!(decode_one(SWAP, writer.as_bytes()).is_unknown());
+    }
+
+    /* ------------------------------------------------------------------------------------ *
+     * A singular field written twice
+     * ------------------------------------------------------------------------------------ */
+
+    use crate::proto::{Field, FieldValue};
+
+    /// Re-encodes a decoded field list exactly, zero values and empty bytes included. The
+    /// wallet's encoders write minimal varints in field order, so decoding a document and
+    /// re-encoding it reproduces it byte for byte, which `the_rewriter_is_faithful` pins.
+    fn encode_raw(fields: &[Field]) -> Vec<u8> {
+        fn varint(out: &mut Vec<u8>, mut value: u64) {
+            loop {
+                let byte = (value & 0x7f) as u8;
+                value >>= 7;
+                if value == 0 {
+                    out.push(byte);
+                    return;
+                }
+                out.push(byte | 0x80);
+            }
+        }
+        let mut out = Vec::new();
+        for field in fields {
+            match &field.value {
+                FieldValue::Varint(value) => {
+                    varint(&mut out, u64::from(field.tag) << 3);
+                    varint(&mut out, *value);
+                }
+                FieldValue::Bytes(bytes) => {
+                    varint(&mut out, (u64::from(field.tag) << 3) | 2);
+                    varint(&mut out, bytes.len() as u64);
+                    out.extend_from_slice(bytes);
+                }
+            }
+        }
+        out
+    }
+
+    /// Follows `path`, field numbers from the outside in, and gives the field at its end a
+    /// second occurrence directly after the first, re-framing every enclosing message. The second
+    /// occurrence carries `second`, or repeats the first's value when that is `None`.
+    fn with_second(bytes: &[u8], path: &[u32], second: Option<FieldValue>) -> Vec<u8> {
+        let mut fields = decode_fields(bytes).unwrap();
+        let index = fields
+            .iter()
+            .position(|field| field.tag == path[0])
+            .unwrap_or_else(|| panic!("field {} is not in this message", path[0]));
+        if path.len() == 1 {
+            let value = second.unwrap_or_else(|| fields[index].value.clone());
+            fields.insert(
+                index + 1,
+                Field {
+                    tag: path[0],
+                    value,
+                },
+            );
+        } else {
+            let inner = with_second(fields[index].value.as_bytes().unwrap(), &path[1..], second);
+            fields[index].value = FieldValue::Bytes(inner);
+        }
+        encode_raw(&fields)
+    }
+
+    /// Appends `field` to the message at `path`, for fields the wallet's encoders never write,
+    /// such as a fee payer. Called twice, it writes the field twice.
+    fn with_field(bytes: &[u8], path: &[u32], field: Field) -> Vec<u8> {
+        let mut fields = decode_fields(bytes).unwrap();
+        match path.split_first() {
+            None => fields.push(field),
+            Some((&tag, rest)) => {
+                let index = fields.iter().position(|f| f.tag == tag).unwrap();
+                let inner = with_field(fields[index].value.as_bytes().unwrap(), rest, field);
+                fields[index].value = FieldValue::Bytes(inner);
+            }
+        }
+        encode_raw(&fields)
+    }
+
+    fn doc_of(msgs: Vec<Msg>, memo: &str) -> Vec<u8> {
+        UnsignedTx::new(
+            msgs,
+            Fee::new(vec![Coin::new("uatom", "5000").unwrap()], 200_000).unwrap(),
+            memo,
+        )
+        .unwrap()
+        .sign_bytes(&signer(), SignMode::Direct)
+        .unwrap()
+    }
+
+    /// Where a message's own fields sit inside a `SignDoc`: body_bytes 1, the first Any in
+    /// messages 1, its value 2.
+    const MSG: [u32; 3] = [1, 1, 2];
+
+    fn at(path: &[u32]) -> Vec<u32> {
+        MSG.iter().chain(path).copied().collect()
+    }
+
+    /// Every message the decoder knows, built by the wallet's own encoders with every field set,
+    /// alongside the field numbers its proto declares singular. Repeated fields (a send's coins,
+    /// a contract call's funds, a swap's routes) are left out: two coins are two coins.
+    fn every_known_message() -> Vec<(Msg, &'static [u32])> {
+        vec![
+            (
+                Msg::Send {
+                    from_address: FROM.to_owned(),
+                    to_address: TO.to_owned(),
+                    amount: vec![Coin::new("uatom", "1000000").unwrap()],
+                },
+                &[1, 2],
+            ),
+            (
+                Msg::Delegate {
+                    delegator_address: FROM.to_owned(),
+                    validator_address: VALOPER.to_owned(),
+                    amount: Coin::new("uatom", "5000000").unwrap(),
+                },
+                &[1, 2, 3],
+            ),
+            (
+                Msg::Undelegate {
+                    delegator_address: FROM.to_owned(),
+                    validator_address: VALOPER.to_owned(),
+                    amount: Coin::new("uatom", "1000000").unwrap(),
+                },
+                &[1, 2, 3],
+            ),
+            (
+                Msg::BeginRedelegate {
+                    delegator_address: FROM.to_owned(),
+                    validator_src_address: VALOPER.to_owned(),
+                    validator_dst_address: VALOPER.to_owned(),
+                    amount: Coin::new("uatom", "1000000").unwrap(),
+                },
+                &[1, 2, 3, 4],
+            ),
+            (
+                Msg::WithdrawDelegatorReward {
+                    delegator_address: FROM.to_owned(),
+                    validator_address: VALOPER.to_owned(),
+                },
+                &[1, 2],
+            ),
+            (
+                Msg::Vote {
+                    proposal_id: 848,
+                    voter: FROM.to_owned(),
+                    option: VoteOption::Yes,
+                },
+                &[1, 2, 3],
+            ),
+            (
+                // Every field set, timeouts and memo included, so all eight are on the wire.
+                Msg::IbcTransfer {
+                    source_port: "transfer".to_owned(),
+                    source_channel: "channel-141".to_owned(),
+                    token: Coin::new("uatom", "1000000").unwrap(),
+                    sender: FROM.to_owned(),
+                    receiver: "addr_safro19rl4cm2hmr8afy4kldpxz3fka4jguq0ayvv259".to_owned(),
+                    timeout_height: Height {
+                        revision_number: 1,
+                        revision_height: 20_000_000,
+                    },
+                    timeout_timestamp: 1_700_000_000_000_000_000,
+                    memo: "forward".to_owned(),
+                },
+                &[1, 2, 3, 4, 5, 6, 7, 8],
+            ),
+            (
+                Msg::ExecuteContract {
+                    sender: FROM.to_owned(),
+                    contract: TO.to_owned(),
+                    msg: br#"{"swap":{"offer":"100"}}"#.to_vec(),
+                    funds: vec![Coin::new("uatom", "100").unwrap()],
+                },
+                &[1, 2, 3],
+            ),
+            (
+                Msg::SwapExactAmountIn {
+                    sender: OSMO.to_owned(),
+                    routes: vec![hop(1, ATOM), hop(3586, OUT)],
+                    token_in: Coin::new("uosmo", "10000000").unwrap(),
+                    token_out_min_amount: "340000".to_owned(),
+                },
+                &[1, 3, 4],
+            ),
+            (
+                Msg::SplitRouteSwapExactAmountIn {
+                    sender: OSMO.to_owned(),
+                    routes: vec![
+                        SwapAmountInSplitRoute {
+                            pools: vec![hop(3498, OUT)],
+                            token_in_amount: "6000000".to_owned(),
+                        },
+                        SwapAmountInSplitRoute {
+                            pools: vec![hop(1, ATOM), hop(3586, OUT)],
+                            token_in_amount: "4000000".to_owned(),
+                        },
+                    ],
+                    token_in_denom: "uosmo".to_owned(),
+                    token_out_min_amount: "350000".to_owned(),
+                },
+                &[1, 3, 4],
+            ),
+        ]
+    }
+
+    #[track_caller]
+    fn assert_not_understood(doc: &[u8], what: &str) {
+        let decoded = decode_direct_sign_doc(doc).unwrap_or_else(|e| {
+            panic!("{what}: refused outright ({e}), expected an unknown message")
+        });
+        assert!(
+            decoded.msgs[0].is_unknown(),
+            "{what} was presented as understood: {:?}",
+            decoded.msgs[0]
+        );
+        assert!(decoded.has_unknown_msgs, "{what}");
+        assert!(!decoded.is_safe_to_sign_without_blind_signing(), "{what}");
+        assert!(
+            decoded.summaries()[0].starts_with("UNKNOWN ACTION"),
+            "{what}"
+        );
+    }
+
+    #[track_caller]
+    fn assert_refused(doc: &[u8], what: &str) {
+        assert!(
+            decode_direct_sign_doc(doc).is_err(),
+            "{what} was not refused: {:?}",
+            decode_direct_sign_doc(doc)
+        );
+    }
+
+    #[test]
+    fn the_rewriter_is_faithful() {
+        // The helpers above rebuild documents from decoded fields. Unless that is the identity on
+        // an untouched document, a refusal below could be the rewriter's fault rather than the
+        // duplicate's.
+        for (msg, _) in every_known_message() {
+            let doc = doc_of(vec![msg], "memo");
+            assert_eq!(encode_raw(&decode_fields(&doc).unwrap()), doc);
+            assert_eq!(
+                with_field(
+                    &doc,
+                    &[],
+                    Field {
+                        tag: 9,
+                        value: FieldValue::Varint(1)
+                    }
+                )[..doc.len()],
+                doc[..]
+            );
+        }
+    }
+
+    #[test]
+    fn every_singular_field_of_every_message_written_twice_is_not_understood() {
+        for (msg, singular) in every_known_message() {
+            let doc = doc_of(vec![msg.clone()], "");
+            let untouched = decode_direct_sign_doc(&doc).unwrap();
+            assert!(
+                !untouched.has_unknown_msgs,
+                "{} must decode before it is broken",
+                msg.type_url()
+            );
+
+            for &tag in singular {
+                assert_not_understood(
+                    &with_second(&doc, &at(&[tag]), None),
+                    &format!("{} with field {tag} twice", msg.type_url()),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_coin_written_with_two_amounts_or_two_denoms_is_not_understood_anywhere() {
+        // The coin inside each message that carries one: a send's first coin, a delegation's
+        // amount, a transfer's token, a contract call's first fund, a swap's input.
+        let coin_fields: [(usize, u32); 7] =
+            [(0, 3), (1, 3), (2, 3), (3, 4), (6, 3), (7, 5), (8, 3)];
+        let messages = every_known_message();
+        for (index, coin_tag) in coin_fields {
+            let msg = messages[index].0.clone();
+            let doc = doc_of(vec![msg.clone()], "");
+            for coin_field in [1, 2] {
+                assert_not_understood(
+                    &with_second(&doc, &at(&[coin_tag, coin_field]), None),
+                    &format!("{} with a coin field {coin_field} twice", msg.type_url()),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nested_singular_fields_are_held_to_the_same_rule() {
+        let messages = every_known_message();
+
+        // MsgTransfer's timeout height: revision_number 1, revision_height 2.
+        let transfer = doc_of(vec![messages[6].0.clone()], "");
+        for counter in [1, 2] {
+            assert_not_understood(
+                &with_second(&transfer, &at(&[6, counter]), Some(FieldValue::Varint(1))),
+                &format!("a transfer whose timeout height has field {counter} twice"),
+            );
+        }
+
+        // A swap hop's pool_id and token_out_denom, and a split leg's token_in_amount and the
+        // pool ids inside it.
+        let swap = doc_of(vec![messages[8].0.clone()], "");
+        for hop_field in [1, 2] {
+            assert_not_understood(
+                &with_second(&swap, &at(&[2, hop_field]), None),
+                &format!("a swap hop with field {hop_field} twice"),
+            );
+        }
+        let split = doc_of(vec![messages[9].0.clone()], "");
+        assert_not_understood(
+            &with_second(&split, &at(&[2, 2]), None),
+            "a split leg with two token_in_amounts",
+        );
+        assert_not_understood(
+            &with_second(&split, &at(&[2, 1, 1]), Some(FieldValue::Varint(3586))),
+            "a split leg hop with two pool ids",
+        );
+
+        // gov v1's MsgVote adds metadata 4, which the prompt does not show.
+        let mut vote = ProtoWriter::new();
+        vote.uint64(1, 848)
+            .string(2, FROM)
+            .int32(3, 1)
+            .string(4, "first")
+            .string(4, "second");
+        let doc = hand_built_doc(vec![any_of("/cosmos.gov.v1.MsgVote", vote.as_bytes())]);
+        assert_not_understood(&doc, "a gov v1 vote with two metadata fields");
+    }
+
+    #[test]
+    fn a_send_with_two_recipients_is_not_treated_as_understood() {
+        // The attack the rule exists for: the recipient a first-occurrence reader shows, then
+        // the one the chain pays.
+        let doc = doc_of(
+            vec![Msg::Send {
+                from_address: FROM.to_owned(),
+                to_address: TO.to_owned(),
+                amount: vec![Coin::new("uatom", "1000000").unwrap()],
+            }],
+            "",
+        );
+        let attacker = "cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4";
+        let forged = with_second(
+            &doc,
+            &at(&[2]),
+            Some(FieldValue::Bytes(attacker.as_bytes().to_vec())),
+        );
+        assert_not_understood(&forged, "a MsgSend with two to_address fields");
+        assert!(!decode_direct_sign_doc(&forged).unwrap().summaries()[0].contains(TO));
+
+        // And a coin whose second amount is the real one.
+        let forged = with_second(
+            &doc,
+            &at(&[3, 2]),
+            Some(FieldValue::Bytes(b"999999999999".to_vec())),
+        );
+        assert_not_understood(&forged, "a MsgSend whose coin has two amounts");
+    }
+
+    #[test]
+    fn an_any_with_two_type_urls_or_two_values_is_refused_outright() {
+        // The worst case: the prompt would name one message while the chain ran another, and
+        // there is no honest name to give the result, so the document is refused rather than
+        // shown with an unknown message.
+        let doc = doc_of(
+            vec![Msg::Send {
+                from_address: FROM.to_owned(),
+                to_address: TO.to_owned(),
+                amount: vec![Coin::new("uatom", "1").unwrap()],
+            }],
+            "",
+        );
+        assert_refused(
+            &with_second(
+                &doc,
+                &[1, 1, 1],
+                Some(FieldValue::Bytes(b"/cosmos.authz.v1beta1.MsgExec".to_vec())),
+            ),
+            "an Any with two type URLs",
+        );
+        assert_refused(
+            &with_second(&doc, &[1, 1, 1], None),
+            "an Any with its type URL twice",
+        );
+        assert_refused(
+            &with_second(&doc, &[1, 1, 2], None),
+            "an Any with two values",
+        );
+    }
+
+    #[test]
+    fn a_repeated_field_in_the_envelope_refuses_the_whole_document() {
+        let mut tx = UnsignedTx::new(
+            vec![Msg::Send {
+                from_address: FROM.to_owned(),
+                to_address: TO.to_owned(),
+                amount: vec![Coin::new("uatom", "1").unwrap()],
+            }],
+            Fee::new(vec![Coin::new("uatom", "5000").unwrap()], 200_000).unwrap(),
+            "deposit-id:1234567890",
+        )
+        .unwrap();
+        tx.timeout_height = 20_000_000;
+        let doc = tx.sign_bytes(&signer(), SignMode::Direct).unwrap();
+        assert!(decode_direct_sign_doc(&doc).is_ok(), "the control decodes");
+
+        let bytes = |value: &str| Some(FieldValue::Bytes(value.as_bytes().to_vec()));
+        for (path, second, what) in [
+            // SignDoc: body_bytes, auth_info_bytes, chain_id, account_number.
+            (vec![1], None, "a SignDoc with two bodies"),
+            (vec![2], None, "a SignDoc with two auth infos"),
+            (vec![3], bytes("osmosis-1"), "a SignDoc with two chain ids"),
+            (
+                vec![4],
+                Some(FieldValue::Varint(1)),
+                "a SignDoc with two account numbers",
+            ),
+            // TxBody: a memo the exchange reads twice, and a timeout height.
+            (
+                vec![1, 2],
+                bytes("deposit-id:0000000000"),
+                "a TxBody with two memos",
+            ),
+            (
+                vec![1, 3],
+                Some(FieldValue::Varint(1)),
+                "a TxBody with two timeout heights",
+            ),
+            // AuthInfo: the fee.
+            (vec![2, 2], None, "an AuthInfo with two fees"),
+            // Fee: the gas limit, and a fee coin's amount.
+            (
+                vec![2, 2, 2],
+                Some(FieldValue::Varint(1)),
+                "a Fee with two gas limits",
+            ),
+            (vec![2, 2, 1, 2], bytes("1"), "a fee coin with two amounts"),
+            (
+                vec![2, 2, 1, 1],
+                bytes("uosmo"),
+                "a fee coin with two denoms",
+            ),
+            // SignerInfo: public key, mode info, sequence.
+            (vec![2, 1, 1], None, "a SignerInfo with two public keys"),
+            (vec![2, 1, 2], None, "a SignerInfo with two mode infos"),
+            (
+                vec![2, 1, 3],
+                Some(FieldValue::Varint(8)),
+                "a SignerInfo with two sequences",
+            ),
+        ] {
+            assert_refused(&with_second(&doc, &path, second), what);
+        }
+
+        // Singular fields the wallet never writes, written twice by someone else.
+        let twice = |doc: &[u8], path: &[u32], tag: u32, value: FieldValue| {
+            let once = with_field(
+                doc,
+                path,
+                Field {
+                    tag,
+                    value: value.clone(),
+                },
+            );
+            with_field(&once, path, Field { tag, value })
+        };
+        for (path, tag, value, what) in [
+            (
+                vec![1],
+                4,
+                FieldValue::Varint(1),
+                "a TxBody with unordered twice",
+            ),
+            (
+                vec![1],
+                5,
+                FieldValue::Bytes(vec![0x08, 0x01]),
+                "a TxBody with two timeout timestamps",
+            ),
+            (
+                vec![2],
+                3,
+                FieldValue::Bytes(vec![]),
+                "an AuthInfo with two tips",
+            ),
+            (
+                vec![2, 2],
+                3,
+                FieldValue::Bytes(FROM.as_bytes().to_vec()),
+                "a Fee with two payers",
+            ),
+            (
+                vec![2, 2],
+                4,
+                FieldValue::Bytes(TO.as_bytes().to_vec()),
+                "a Fee with two granters",
+            ),
+        ] {
+            assert_refused(&twice(&doc, &path, tag, value), what);
+        }
+    }
+
+    #[test]
+    fn repeated_fields_still_repeat() {
+        // The rule is about singular fields. A send of two coins, two messages, a fee in two
+        // denoms and a second signer are all legitimate, and still decode as before.
+        let doc = doc_of(
+            vec![
+                Msg::Send {
+                    from_address: FROM.to_owned(),
+                    to_address: TO.to_owned(),
+                    amount: vec![
+                        Coin::new("uatom", "1").unwrap(),
+                        Coin::new("uosmo", "2").unwrap(),
+                    ],
+                },
+                Msg::ExecuteContract {
+                    sender: FROM.to_owned(),
+                    contract: TO.to_owned(),
+                    msg: br#"{"swap":{}}"#.to_vec(),
+                    funds: vec![
+                        Coin::new("uatom", "3").unwrap(),
+                        Coin::new("uosmo", "4").unwrap(),
+                    ],
+                },
+            ],
+            "",
+        );
+        let decoded = decode_direct_sign_doc(&doc).unwrap();
+        assert!(decoded.is_safe_to_sign_without_blind_signing());
+        assert_eq!(
+            decoded.summaries()[0],
+            format!("Send 1 uatom, 2 uosmo to {TO}")
+        );
+        assert_eq!(
+            decoded.summaries()[1],
+            format!("Execute \"swap\" on {TO} sending 3 uatom, 4 uosmo")
+        );
+
+        // A second fee coin and a second signer, added to the AuthInfo by hand.
+        let fee_coin = {
+            let mut coin = ProtoWriter::new();
+            coin.string(1, "uosmo").string(2, "7");
+            coin.into_bytes()
+        };
+        let second_signer = {
+            let mut signer_info = ProtoWriter::new();
+            signer_info.uint64(3, 99);
+            signer_info.into_bytes()
+        };
+        let doc = with_field(
+            &doc,
+            &[2, 2],
+            Field {
+                tag: 1,
+                value: FieldValue::Bytes(fee_coin),
+            },
+        );
+        let doc = with_field(
+            &doc,
+            &[2],
+            Field {
+                tag: 1,
+                value: FieldValue::Bytes(second_signer),
+            },
+        );
+        let decoded = decode_direct_sign_doc(&doc).unwrap();
+        assert_eq!(
+            decoded.fee,
+            vec![
+                Coin::new("uatom", "5000").unwrap(),
+                Coin::new("uosmo", "7").unwrap()
+            ]
+        );
+        assert_eq!(
+            decoded.sequence, 7,
+            "the first signer's sequence, as before"
+        );
+        assert!(decoded.is_safe_to_sign_without_blind_signing());
+
+        // A second signer is checked like the first: a sequence written twice inside it is a
+        // duplicate, even though the prompt reads only the first signer's.
+        let doubled_signer = {
+            let mut signer_info = ProtoWriter::new();
+            signer_info.uint64(3, 99).uint64(3, 100);
+            signer_info.into_bytes()
+        };
+        assert_refused(
+            &with_field(
+                &doc,
+                &[2],
+                Field {
+                    tag: 1,
+                    value: FieldValue::Bytes(doubled_signer),
+                },
+            ),
+            "a second SignerInfo with two sequences",
+        );
     }
 
     #[test]

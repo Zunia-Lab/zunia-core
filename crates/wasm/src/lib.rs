@@ -206,19 +206,30 @@ pub fn sign_cosmos(
     Ok(hex::encode(signature.as_bytes()))
 }
 
+/// Describes `SIGN_MODE_DIRECT` bytes a dApp handed over, for the signing prompt.
+///
+/// Throws when the document itself cannot be trusted, which includes any singular field of the
+/// `SignDoc`, `TxBody`, `AuthInfo`, `Fee` or an `Any` written twice. A message the wallet cannot
+/// read, a body with a singular field written twice among them, comes back with
+/// `hasUnknownMsgs: true` and `safeWithoutBlindSigning: false`.
 #[wasm_bindgen]
 pub fn decode_direct_tx(sign_doc_hex: &str) -> Result<JsValue, JsValue> {
-    let bytes = decode_hex("sign document", sign_doc_hex).map_err(err)?;
-    let decoded = decode_direct_sign_doc(&bytes).map_err(err)?;
-    let payload = serde_json::json!({
+    let payload = decoded_tx_payload(sign_doc_hex).map_err(err)?;
+    serde_wasm_bindgen::to_value(&payload).map_err(err)
+}
+
+/// The inner half of [`decode_direct_tx`], kept free of `JsValue` so it can be tested natively.
+fn decoded_tx_payload(sign_doc_hex: &str) -> BindingResult<serde_json::Value> {
+    let bytes = decode_hex("sign document", sign_doc_hex)?;
+    let decoded = decode_direct_sign_doc(&bytes)?;
+    Ok(serde_json::json!({
         "chainId": decoded.chain_id,
         "memo": decoded.memo,
         "hasUnknownMsgs": decoded.has_unknown_msgs,
         "safeWithoutBlindSigning": decoded.is_safe_to_sign_without_blind_signing(),
         "summaries": decoded.summaries(),
         "addresses": decoded.msgs.iter().flat_map(|m| m.addresses()).collect::<Vec<_>>(),
-    });
-    serde_wasm_bindgen::to_value(&payload).map_err(err)
+    }))
 }
 
 /// Direct sign bytes for a single bank send.
@@ -1910,6 +1921,137 @@ mod tests {
                 "swap refused: token_out_min_amount is zero, so the swap would fill at any price"
             );
         }
+    }
+
+    /* ---------------------------------------------------------------------------------- *
+     * decode_direct_tx and a singular field written twice
+     * ---------------------------------------------------------------------------------- */
+
+    use zunia_cosmos::proto::{decode_fields, find_all, find_field, ProtoWriter};
+
+    /// A fuzz corpus seed, which doubles as a fixture here.
+    fn corpus_seed(name: &str) -> String {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fuzz/corpus/tx_decoder")
+            .join(name);
+        hex::encode(
+            std::fs::read(&path).unwrap_or_else(|_| panic!("{} is missing", path.display())),
+        )
+    }
+
+    /// The golden send's body and auth info, decoded so a test can rebuild either with one
+    /// field written twice.
+    fn golden_send_parts(vectors: &Value) -> (Vec<u8>, Vec<u8>) {
+        let case = case_named(vectors, "msg_send");
+        (
+            hex::decode(str_at(&case, &["direct", "body_bytes_hex"])).unwrap(),
+            hex::decode(str_at(&case, &["direct", "auth_info_bytes_hex"])).unwrap(),
+        )
+    }
+
+    fn sign_doc_hex(body: &[u8], auth_info: &[u8]) -> String {
+        let mut doc = ProtoWriter::new();
+        doc.bytes(1, body)
+            .bytes(2, auth_info)
+            .string(3, "cosmoshub-4")
+            .uint64(4, 12345);
+        hex::encode(doc.into_bytes())
+    }
+
+    #[test]
+    fn decode_direct_tx_describes_a_golden_send_as_safe() {
+        // The control for the refusals below: the same envelope, written once, reads cleanly.
+        let vectors = load();
+        let (body, auth_info) = golden_send_parts(&vectors);
+        assert_eq!(
+            sign_doc_hex(&body, &auth_info),
+            str_at(
+                &case_named(&vectors, "msg_send"),
+                &["direct", "sign_bytes_hex"]
+            )
+        );
+        let payload = decoded_tx_payload(&sign_doc_hex(&body, &auth_info)).unwrap();
+        assert_eq!(payload["hasUnknownMsgs"], json!(false));
+        assert_eq!(payload["safeWithoutBlindSigning"], json!(true));
+        assert_eq!(
+            payload["summaries"],
+            json!([format!("Send 1000000 uatom to {TO}")])
+        );
+    }
+
+    #[test]
+    fn decode_direct_tx_marks_a_send_with_two_recipients_unknown() {
+        // The chain pays the second to_address; a first-occurrence reader would have shown the
+        // first and called the transaction safe. The extension refuses an unknown message unless
+        // the user has turned blind signing on.
+        let payload =
+            decoded_tx_payload(&corpus_seed("regression_send_with_two_recipients")).unwrap();
+        assert_eq!(payload["hasUnknownMsgs"], json!(true));
+        assert_eq!(payload["safeWithoutBlindSigning"], json!(false));
+        assert!(payload["summaries"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("UNKNOWN ACTION: /cosmos.bank.v1beta1.MsgSend"));
+        assert_eq!(
+            payload["addresses"],
+            json!([]),
+            "neither recipient is offered"
+        );
+    }
+
+    #[test]
+    fn decode_direct_tx_refuses_a_repeated_field_in_the_envelope() {
+        let vectors = load();
+        let (body, auth_info) = golden_send_parts(&vectors);
+
+        // An Any naming MsgSend and then MsgExec.
+        assert_eq!(
+            decoded_tx_payload(&corpus_seed("regression_any_with_two_type_urls")).unwrap_err(),
+            BindingError::Cosmos(CosmosError::Decode)
+        );
+
+        // A TxBody with two memos: an exchange credits whichever one the chain keeps.
+        let body_fields = decode_fields(&body).unwrap();
+        let any = find_field(&body_fields, 1)
+            .unwrap()
+            .as_bytes()
+            .unwrap()
+            .to_vec();
+        let mut two_memos = ProtoWriter::new();
+        two_memos
+            .repeated_message(1, &[any])
+            .string(2, "deposit-id:1111111111")
+            .string(2, "deposit-id:2222222222");
+        assert_eq!(
+            decoded_tx_payload(&sign_doc_hex(two_memos.as_bytes(), &auth_info)).unwrap_err(),
+            BindingError::Cosmos(CosmosError::Decode)
+        );
+
+        // A Fee with two gas limits, so the fee shown and the fee charged could differ.
+        let auth_fields = decode_fields(&auth_info).unwrap();
+        let signer_info = find_field(&auth_fields, 1)
+            .unwrap()
+            .as_bytes()
+            .unwrap()
+            .to_vec();
+        let fee = decode_fields(find_field(&auth_fields, 2).unwrap().as_bytes().unwrap()).unwrap();
+        let coins: Vec<Vec<u8>> = find_all(&fee, 1)
+            .into_iter()
+            .map(|coin| coin.as_bytes().unwrap().to_vec())
+            .collect();
+        let mut two_gas_limits = ProtoWriter::new();
+        two_gas_limits
+            .repeated_message(1, &coins)
+            .uint64(2, 200_000)
+            .uint64(2, 1);
+        let mut forged_auth_info = ProtoWriter::new();
+        forged_auth_info
+            .repeated_message(1, &[signer_info])
+            .message(2, two_gas_limits.as_bytes());
+        let refused =
+            decoded_tx_payload(&sign_doc_hex(&body, forged_auth_info.as_bytes())).unwrap_err();
+        assert_eq!(refused, BindingError::Cosmos(CosmosError::Decode));
+        assert_eq!(refused.to_string(), "could not decode payload");
     }
 
     #[test]

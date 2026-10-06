@@ -192,6 +192,33 @@ fn check_all(data: &[u8]) {
 }
 
 #[test]
+fn the_duplicate_field_regressions_stay_refused() {
+    // Two documents the decoder used to describe as an ordinary send, safe to sign without the
+    // blind-signing toggle. One writes a second recipient after the one shown; the other writes
+    // a second type URL, MsgExec, after MsgSend. The chain reads the last occurrence of a singular
+    // field, so both would have executed something other than what the prompt said. The
+    // properties accept any honest outcome, so the outcomes are pinned here.
+    let corpus = read_corpus("tx_decoder");
+    let seed = |name: &str| -> &[u8] {
+        corpus
+            .iter()
+            .find(|(found, _)| found == name)
+            .map(|(_, bytes)| bytes.as_slice())
+            .unwrap_or_else(|| panic!("fuzz/corpus/tx_decoder/{name} is missing"))
+    };
+
+    let two_recipients =
+        zunia_cosmos::decode_direct_sign_doc(seed("regression_send_with_two_recipients")).unwrap();
+    assert!(two_recipients.msgs[0].is_unknown());
+    assert!(!two_recipients.is_safe_to_sign_without_blind_signing());
+
+    assert!(
+        zunia_cosmos::decode_direct_sign_doc(seed("regression_any_with_two_type_urls")).is_err(),
+        "an Any naming two message types must refuse the whole document"
+    );
+}
+
+#[test]
 fn single_byte_flips_in_real_sign_docs_hold_their_properties() {
     // A dApp-supplied sign document that has been corrupted in transit, or crafted to look
     // almost valid, must still either decode honestly or be rejected. Never a panic, and never

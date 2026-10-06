@@ -26,6 +26,15 @@ Two bugs of that second kind have been found so far, both by the mutation sweep 
   wallet was unable to sign. Fixed by checking hashability at parse time, in
   `crates/evm/src/eip712.rs`.
 
+A third was found in review rather than by the sweep, and the sweep now guards it. The decoder
+read the first occurrence of a protobuf field that the chain reads the last occurrence of, so a
+`MsgSend` carrying a second `to_address` was shown with the first recipient and reported safe to
+sign while the chain would pay the second, and an `Any` carrying a second `type_url` was shown as
+one message while the chain would run another. Fixed by refusing any singular field written twice,
+at every level the decoder reads, in `crates/cosmos/src/decode.rs`. The two documents are
+`regression_send_with_two_recipients` and `regression_any_with_two_type_urls` in
+`corpus/tx_decoder/`, and `check_tx_decoder` asserts the rule on every input the sweep generates.
+
 ## Running without nightly
 
 `cargo-fuzz` needs a nightly toolchain, which is not always available and is a slow first-time

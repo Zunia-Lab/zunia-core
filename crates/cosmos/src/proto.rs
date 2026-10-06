@@ -268,8 +268,46 @@ fn read_varint(input: &[u8]) -> Result<(u64, &[u8])> {
 }
 
 /// Finds the first field with `tag`.
+///
+/// For reading bytes this crate encoded itself, as the tests do. Code reading bytes from anyone
+/// else must use [`find_unique_field`] for a singular field: the chain keeps the last occurrence,
+/// so the first one is not necessarily the one that executes.
 pub fn find_field(fields: &[Field], tag: u32) -> Option<&FieldValue> {
     fields.iter().find(|f| f.tag == tag).map(|f| &f.value)
+}
+
+/// Finds a singular field, refusing a second occurrence of it.
+///
+/// Protobuf lets a later occurrence of a singular field override an earlier one, and gogoproto,
+/// which every Cosmos chain decodes with, does exactly that: it keeps the last value of a scalar,
+/// string or bytes field and merges repeated occurrences of an embedded message. Reading the
+/// first occurrence instead, as [`find_field`] does, lets a document show the user one value
+/// while the chain executes another: one recipient on screen and a different one paid, one
+/// message type named and another run. Neither reading is safe to present, so a second
+/// occurrence is an error here. No encoder emits a singular field twice, which is why refusing
+/// one costs nothing legitimate.
+///
+/// Repeated fields, such as the coins of a `MsgSend` or the messages of a `TxBody`, are read
+/// with [`find_all`] and are not subject to this.
+pub fn find_unique_field(fields: &[Field], tag: u32) -> Result<Option<&FieldValue>> {
+    let mut found = fields.iter().filter(|field| field.tag == tag);
+    let first = found.next();
+    if found.next().is_some() {
+        return Err(CosmosError::Decode);
+    }
+    Ok(first.map(|field| &field.value))
+}
+
+/// Refuses `fields` if any of the singular field numbers in `singular` occurs more than once.
+///
+/// For the singular fields a decoder does not read. The wallet never shows them, but the chain
+/// still executes them, so a duplicate means the same there as anywhere else; the fields a
+/// decoder does read go through [`find_unique_field`] directly.
+pub fn require_unique(fields: &[Field], singular: &[u32]) -> Result<()> {
+    for &tag in singular {
+        find_unique_field(fields, tag)?;
+    }
+    Ok(())
 }
 
 /// Collects every field with `tag`, for repeated fields.
@@ -438,6 +476,81 @@ mod tests {
     #[test]
     fn empty_input_decodes_to_nothing() {
         assert!(decode_fields(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_singular_field_read_strictly_must_occur_at_most_once() {
+        let mut writer = ProtoWriter::new();
+        writer
+            .string(1, "only")
+            .repeated_string(2, &["a".to_owned(), "b".to_owned()]);
+        let fields = decode_fields(writer.as_bytes()).unwrap();
+        assert_eq!(
+            find_unique_field(&fields, 1)
+                .unwrap()
+                .unwrap()
+                .as_string()
+                .unwrap(),
+            "only"
+        );
+        assert!(find_unique_field(&fields, 9).unwrap().is_none());
+        // Tag 2 holds two values. Read as singular, that is the ambiguity this refuses.
+        assert_eq!(
+            find_unique_field(&fields, 2).unwrap_err(),
+            CosmosError::Decode
+        );
+
+        // The attack shape: a benign value first, the one the chain keeps second. Whatever the
+        // values and wire types, the second occurrence is refused, never chosen between.
+        for (first, second) in [
+            (
+                FieldValue::Bytes(b"shown".to_vec()),
+                FieldValue::Bytes(b"executed".to_vec()),
+            ),
+            (FieldValue::Varint(7), FieldValue::Varint(8)),
+            (FieldValue::Varint(7), FieldValue::Bytes(b"7".to_vec())),
+            (
+                FieldValue::Bytes(b"same".to_vec()),
+                FieldValue::Bytes(b"same".to_vec()),
+            ),
+        ] {
+            let fields = [
+                Field {
+                    tag: 4,
+                    value: first,
+                },
+                Field {
+                    tag: 4,
+                    value: second,
+                },
+            ];
+            assert_eq!(
+                find_unique_field(&fields, 4).unwrap_err(),
+                CosmosError::Decode
+            );
+            assert_eq!(
+                require_unique(&fields, &[4]).unwrap_err(),
+                CosmosError::Decode
+            );
+        }
+    }
+
+    #[test]
+    fn require_unique_checks_only_the_fields_it_is_given() {
+        let mut writer = ProtoWriter::new();
+        writer
+            .string(1, "x")
+            .repeated_string(2, &["a".to_owned(), "b".to_owned()])
+            .uint64(3, 5);
+        let fields = decode_fields(writer.as_bytes()).unwrap();
+        // Field 2 is repeated by design, so a decoder lists only 1 and 3 as singular.
+        assert!(require_unique(&fields, &[1, 3]).is_ok());
+        assert!(require_unique(&fields, &[]).is_ok());
+        assert!(require_unique(&fields, &[7]).is_ok(), "absent is fine");
+        assert_eq!(
+            require_unique(&fields, &[1, 2]).unwrap_err(),
+            CosmosError::Decode
+        );
     }
 
     #[test]

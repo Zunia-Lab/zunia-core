@@ -17,7 +17,8 @@
 //!
 //! Not published: this is test infrastructure.
 
-use zunia_cosmos::decode_direct_sign_doc;
+use zunia_cosmos::proto::{decode_fields, find_all, find_field, Field};
+use zunia_cosmos::{decode_direct_sign_doc, DecodedTx};
 use zunia_kernel::{
     convert_prefix, decode_bech32, validate_address, validate_eth_address, AddressScheme,
     KeyringEnvelope,
@@ -79,6 +80,146 @@ pub fn check_tx_decoder(data: &[u8]) {
                 assert!(
                     (0x21..=0x7e).contains(&byte),
                     "an address containing byte {byte:#04x} reached the UI: {address:?}"
+                );
+            }
+        }
+    }
+
+    // The chain reads the last occurrence of a singular protobuf field. A decoder that read the
+    // first could show one recipient, fee or message type while the chain executed another, so
+    // a document the decoder accepted has no singular field written twice in its envelope, and a
+    // message it calls understood has none in its own fields or its coins.
+    assert_no_repeated_singular_fields(data, &decoded);
+}
+
+/// Whether any field number in `singular` occurs more than once in `fields`.
+fn repeats_any(fields: &[Field], singular: &[u32]) -> bool {
+    singular
+        .iter()
+        .any(|tag| fields.iter().filter(|field| field.tag == *tag).count() > 1)
+}
+
+/// The singular fields of each message the decoder can describe, by proto field number.
+///
+/// Written out from the protos rather than taken from the decoder, so that this property checks
+/// the decoder instead of restating it. Repeated fields (a send's coins, a contract call's funds,
+/// a swap's routes) are not listed.
+fn message_singular_fields(type_url: &str) -> &'static [u32] {
+    match type_url {
+        "/cosmos.bank.v1beta1.MsgSend"
+        | "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward" => &[1, 2],
+        "/cosmos.staking.v1beta1.MsgDelegate"
+        | "/cosmos.staking.v1beta1.MsgUndelegate"
+        | "/cosmwasm.wasm.v1.MsgExecuteContract" => &[1, 2, 3],
+        "/cosmos.staking.v1beta1.MsgBeginRedelegate" => &[1, 2, 3, 4],
+        // gov v1 adds metadata at 4; v1beta1 has no field 4 at all.
+        "/cosmos.gov.v1beta1.MsgVote" | "/cosmos.gov.v1.MsgVote" => &[1, 2, 3, 4],
+        "/ibc.applications.transfer.v1.MsgTransfer" => &[1, 2, 3, 4, 5, 6, 7, 8],
+        "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn"
+        | "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn" => &[1, 3, 4],
+        _ => &[],
+    }
+}
+
+/// The fields of each message that hold a `cosmos.base.v1beta1.Coin`, singular or repeated.
+fn message_coin_fields(type_url: &str) -> &'static [u32] {
+    match type_url {
+        "/cosmos.bank.v1beta1.MsgSend"
+        | "/cosmos.staking.v1beta1.MsgDelegate"
+        | "/cosmos.staking.v1beta1.MsgUndelegate"
+        | "/ibc.applications.transfer.v1.MsgTransfer"
+        | "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn" => &[3],
+        "/cosmos.staking.v1beta1.MsgBeginRedelegate" => &[4],
+        "/cosmwasm.wasm.v1.MsgExecuteContract" => &[5],
+        _ => &[],
+    }
+}
+
+fn assert_no_repeated_singular_fields(data: &[u8], decoded: &DecodedTx) {
+    let parse = |bytes: &[u8], what: &str| -> Vec<Field> {
+        decode_fields(bytes)
+            .unwrap_or_else(|_| panic!("the decoder accepted a {what} that does not parse"))
+    };
+    let embedded = |fields: &[Field], tag: u32| -> Vec<Vec<u8>> {
+        find_all(fields, tag)
+            .into_iter()
+            .filter_map(|value| value.as_bytes().ok().map(<[u8]>::to_vec))
+            .collect()
+    };
+
+    // SignDoc, TxBody, AuthInfo, every SignerInfo, the Fee and its coins, every Any.
+    let doc = parse(data, "SignDoc");
+    assert!(
+        !repeats_any(&doc, &[1, 2, 3, 4]),
+        "accepted a SignDoc with a singular field written twice"
+    );
+    let (Some(body), Some(auth_info)) = (embedded(&doc, 1).pop(), embedded(&doc, 2).pop()) else {
+        panic!("the decoder accepted a SignDoc without a body or an auth info");
+    };
+    let body = parse(&body, "TxBody");
+    assert!(
+        !repeats_any(&body, &[2, 3, 4, 5]),
+        "accepted a TxBody with a singular field written twice"
+    );
+    let auth_info = parse(&auth_info, "AuthInfo");
+    assert!(
+        !repeats_any(&auth_info, &[2, 3]),
+        "accepted an AuthInfo with a singular field written twice"
+    );
+    for signer_info in embedded(&auth_info, 1) {
+        assert!(
+            !repeats_any(&parse(&signer_info, "SignerInfo"), &[1, 2, 3]),
+            "accepted a SignerInfo with a singular field written twice"
+        );
+    }
+    for fee in embedded(&auth_info, 2) {
+        let fee = parse(&fee, "Fee");
+        assert!(
+            !repeats_any(&fee, &[2, 3, 4]),
+            "accepted a Fee with a singular field written twice"
+        );
+        for coin in embedded(&fee, 1) {
+            assert!(
+                !repeats_any(&parse(&coin, "fee coin"), &[1, 2]),
+                "accepted a fee coin with two denoms or two amounts"
+            );
+        }
+    }
+
+    let anys = embedded(&body, 1);
+    assert_eq!(
+        anys.len(),
+        decoded.msgs.len(),
+        "every Any in the body must become exactly one decoded message"
+    );
+    for (any, msg) in anys.iter().zip(&decoded.msgs) {
+        let any = parse(any, "Any");
+        assert!(
+            !repeats_any(&any, &[1, 2]),
+            "accepted an Any with two type URLs or two values"
+        );
+        if msg.is_unknown() {
+            continue;
+        }
+        // Each field occurs at most once now, so the first occurrence is the only one.
+        let type_url = find_field(&any, 1)
+            .and_then(|value| value.as_string().ok())
+            .unwrap_or_default();
+        let value = find_field(&any, 2)
+            .and_then(|value| value.as_bytes().ok())
+            .unwrap_or_default();
+        let fields = parse(value, "message body");
+        assert!(
+            !repeats_any(&fields, message_singular_fields(&type_url)),
+            "described {type_url} as understood although one of its singular fields is written \
+             twice"
+        );
+        for &tag in message_coin_fields(&type_url) {
+            for coin in embedded(&fields, tag) {
+                assert!(
+                    !repeats_any(&parse(&coin, "coin"), &[1, 2]),
+                    "described {type_url} as understood although a coin in it has two denoms or \
+                     two amounts"
                 );
             }
         }

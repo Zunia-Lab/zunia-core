@@ -268,6 +268,13 @@ pub extern "C" fn zunia_sign_cosmos(
     .unwrap_or_else(|e| to_cstring(format!("error: {e}")))
 }
 
+/// Describes `SIGN_MODE_DIRECT` bytes a dApp handed over, as JSON:
+/// `{ chainId, memo, hasUnknownMsgs, safeWithoutBlindSigning, summaries }`.
+///
+/// Returns the error encoding when the document itself cannot be trusted, which includes any
+/// singular field of the `SignDoc`, `TxBody`, `AuthInfo`, `Fee` or an `Any` written twice. A
+/// message the wallet cannot read, a body with a singular field written twice among them, comes
+/// back with `hasUnknownMsgs: true` and `safeWithoutBlindSigning: false`.
 #[no_mangle]
 pub extern "C" fn zunia_decode_direct_tx(sign_doc_hex: *const c_char) -> *mut c_char {
     (|| -> Result<String, String> {
@@ -1292,6 +1299,51 @@ mod tests {
         assert_error(
             &sign_bytes(&vectors, &no_floor, "", "direct"),
             "swap refused: token_out_min_amount is zero",
+        );
+    }
+
+    /// The returned string is owned by this crate; the argument only has to outlive the call.
+    fn decode_direct(sign_doc_hex: &str) -> *mut c_char {
+        let doc = c(sign_doc_hex);
+        zunia_decode_direct_tx(doc.as_ptr())
+    }
+
+    /// A fuzz corpus seed, which doubles as a fixture here.
+    fn corpus_seed(name: &str) -> String {
+        let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fuzz/corpus/tx_decoder")
+            .join(name);
+        hex::encode(
+            std::fs::read(&path).unwrap_or_else(|_| panic!("{} is missing", path.display())),
+        )
+    }
+
+    #[test]
+    fn decode_direct_tx_refuses_to_describe_a_singular_field_written_twice() {
+        // The control: the golden send, described and safe.
+        let vectors = vectors();
+        let golden: Value = serde_json::from_str(&ok(decode_direct(text(
+            &case(&vectors, "msg_send")["direct"]["sign_bytes_hex"],
+        ))))
+        .unwrap();
+        assert_eq!(golden["safeWithoutBlindSigning"], json!(true));
+
+        // The same send with a second to_address, which is the one the chain pays: not
+        // described, and not safe to sign without the blind-signing toggle.
+        let two_recipients: Value = serde_json::from_str(&ok(decode_direct(&corpus_seed(
+            "regression_send_with_two_recipients",
+        ))))
+        .unwrap();
+        assert_eq!(two_recipients["hasUnknownMsgs"], json!(true));
+        assert_eq!(two_recipients["safeWithoutBlindSigning"], json!(false));
+        assert!(text(&two_recipients["summaries"][0]).starts_with("UNKNOWN ACTION"));
+
+        // An Any naming two message types: no honest name exists, so the document is refused.
+        assert_error(
+            &read(decode_direct(&corpus_seed(
+                "regression_any_with_two_type_urls",
+            ))),
+            "could not decode payload",
         );
     }
 
