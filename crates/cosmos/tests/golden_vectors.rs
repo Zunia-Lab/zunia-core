@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use zunia_cosmos::amount::Coin;
-use zunia_cosmos::msg::{Height, Msg, VoteOption};
+use zunia_cosmos::msg::{Height, Msg, SwapAmountInRoute, SwapAmountInSplitRoute, VoteOption};
 use zunia_cosmos::proto;
 use zunia_cosmos::tx::{Fee, SignMode, SignerData, UnsignedTx};
 use zunia_cosmos::{adr36_sign_bytes, amino};
@@ -59,7 +59,12 @@ fn message_for(name: &str, addresses: &Value) -> Msg {
     let from = str_at(addresses, &["cosmos"]);
     let valoper = str_at(addresses, &["cosmosvaloper"]);
     let safro = str_at(addresses, &["addr_safro"]);
+    let osmo = str_at(addresses, &["osmo"]);
     let to = "cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz".to_owned();
+    let hop = |pool_id: u64, token_out_denom: &str| SwapAmountInRoute {
+        pool_id,
+        token_out_denom: token_out_denom.to_owned(),
+    };
 
     match name {
         "msg_send" => Msg::Send {
@@ -126,12 +131,45 @@ fn message_for(name: &str, addresses: &Value) -> Msg {
             msg: br#"{"swap":{"offer":"100"}}"#.to_vec(),
             funds: vec![Coin::new("uatom", "100").unwrap()],
         },
+        "msg_swap_exact_amount_in" => Msg::SwapExactAmountIn {
+            sender: osmo,
+            routes: vec![hop(3586, SWAP_OUT_DENOM)],
+            token_in: Coin::new("uosmo", "9950000").unwrap(),
+            token_out_min_amount: "350000".to_owned(),
+        },
+        "msg_swap_exact_amount_in_multi_hop" => Msg::SwapExactAmountIn {
+            sender: osmo,
+            routes: vec![hop(1, ATOM_ON_OSMOSIS), hop(3586, SWAP_OUT_DENOM)],
+            token_in: Coin::new("uosmo", "10000000").unwrap(),
+            token_out_min_amount: "340000".to_owned(),
+        },
+        "msg_split_route_swap_exact_amount_in" => Msg::SplitRouteSwapExactAmountIn {
+            sender: osmo,
+            routes: vec![
+                SwapAmountInSplitRoute {
+                    pools: vec![hop(3498, SWAP_OUT_DENOM)],
+                    token_in_amount: "6000000".to_owned(),
+                },
+                SwapAmountInSplitRoute {
+                    pools: vec![hop(3586, SWAP_OUT_DENOM)],
+                    token_in_amount: "4000000".to_owned(),
+                },
+            ],
+            token_in_denom: "uosmo".to_owned(),
+            token_out_min_amount: "350000".to_owned(),
+        },
         other => panic!(
             "vector \"{other}\" has no Rust counterpart; add it to message_for or remove it \
              from the generator"
         ),
     }
 }
+
+/// The Osmosis denoms the generator's swap cases use: ATOM over IBC, and the token both swap
+/// pools hold.
+const ATOM_ON_OSMOSIS: &str =
+    "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
+const SWAP_OUT_DENOM: &str = "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
 
 fn signer_from(vectors: &Value, public_key: Vec<u8>) -> SignerData {
     SignerData {
@@ -325,7 +363,7 @@ fn every_vector_has_a_rust_counterpart() {
         .map(|c| str_at(c, &["name"]))
         .collect();
 
-    assert!(names.len() >= 10, "expected the full vector set");
+    assert!(names.len() >= 13, "expected the full vector set");
     for name in &names {
         // Panics with a clear message if a case has no counterpart.
         let _ = message_for(name, addresses);
@@ -334,9 +372,11 @@ fn every_vector_has_a_rust_counterpart() {
 
 #[test]
 fn decoding_a_golden_sign_doc_produces_the_right_summary() {
-    // The goldens come from CosmJS, so this exercises the decoder against bytes the Rust side
-    // did not produce, which is the situation that matters: a dApp handing over Direct bytes.
+    // The goldens come from CosmJS and osmojs, so this exercises the decoder against bytes the
+    // Rust side did not produce, which is the situation that matters: a dApp handing over Direct
+    // bytes. The Osmosis app's swaps arrive exactly this way.
     let vectors = load();
+    let addresses = &vectors["key"]["addresses"];
 
     for case in vectors["cases"].as_array().unwrap() {
         let name = str_at(case, &["name"]);
@@ -357,6 +397,68 @@ fn decoding_a_golden_sign_doc_produces_the_right_summary() {
         assert!(
             !decoded.summaries()[0].is_empty(),
             "{name}: no summary to show the user"
+        );
+        // And the prompt must read the same whoever built the transaction: the summary of the
+        // reference bytes is the summary of the message the wallet would have built itself.
+        assert_eq!(
+            decoded.summaries()[0],
+            message_for(&name, addresses).summary(),
+            "{name}: the decoder describes the reference bytes differently from the builder"
+        );
+    }
+}
+
+#[test]
+fn osmosis_swaps_built_by_osmojs_decode_into_named_swaps() {
+    // The Osmosis app signs these through `signDirect`, so this is what the prompt shows for
+    // them. Pinned word for word: the input, the floor on the output, the output denom and the
+    // pools are what a user checks before approving, and none of them may be lost or reordered.
+    let vectors = load();
+    let expected = [
+        (
+            "msg_swap_exact_amount_in",
+            format!("Swap 9950000 uosmo for at least 350000 {SWAP_OUT_DENOM} through pool 3586"),
+        ),
+        (
+            "msg_swap_exact_amount_in_multi_hop",
+            format!(
+                "Swap 10000000 uosmo for at least 340000 {SWAP_OUT_DENOM} through pools 1 → 3586"
+            ),
+        ),
+        (
+            "msg_split_route_swap_exact_amount_in",
+            format!(
+                "Swap 10000000 uosmo for at least 350000 {SWAP_OUT_DENOM} through 2 routes \
+                 (pools 3498; 3586)"
+            ),
+        ),
+    ];
+
+    for (name, summary) in expected {
+        let case = vectors["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == Value::String(name.to_owned()))
+            .unwrap_or_else(|| panic!("vector {name} is missing"));
+        let bytes = hex::decode(str_at(case, &["direct", "sign_bytes_hex"])).unwrap();
+        let decoded = zunia_cosmos::decode_direct_sign_doc(&bytes).unwrap();
+
+        assert!(decoded.is_safe_to_sign_without_blind_signing(), "{name}");
+        assert!(
+            matches!(
+                decoded.msgs[0],
+                zunia_cosmos::DecodedMsg::SwapExactAmountIn { .. }
+                    | zunia_cosmos::DecodedMsg::SplitRouteSwapExactAmountIn { .. }
+            ),
+            "{name}: decoded as {:?}",
+            decoded.msgs[0]
+        );
+        assert_eq!(decoded.summaries()[0], summary, "{name}");
+        assert_eq!(
+            decoded.msgs[0].addresses(),
+            vec![str_at(&vectors, &["key", "addresses", "osmo"])],
+            "{name}: the sender is the only account a swap names"
         );
     }
 }

@@ -9,7 +9,7 @@
 //! - [`proto`]: a small protobuf writer and reader, hand rolled for byte-level control.
 //! - [`amino`]: canonical JSON for `SIGN_MODE_LEGACY_AMINO_JSON`.
 //! - [`amount`]: string-based coin arithmetic, because Cosmos amounts exceed `u64`.
-//! - [`msg`]: the message set, each with both encodings.
+//! - [`msg`]: the message set, each with both encodings, Osmosis's poolmanager swaps included.
 //! - [`json`]: the proto-JSON bridge every binding parses client payloads through.
 //! - [`tx`]: transaction assembly, both sign documents, and ADR-36.
 //! - [`decode`]: turning bytes the wallet did not build into something a user can read.
@@ -39,7 +39,10 @@ pub use json::{
     fee_from_json, msg_from_proto_json, msg_to_proto_json, msgs_from_json, msgs_to_json,
     sign_mode_from_str, MAX_MSGS,
 };
-pub use msg::{Height, Msg, VoteOption};
+pub use msg::{
+    validate_split_route_swap_exact_amount_in, validate_swap_exact_amount_in, Height, Msg,
+    SwapAmountInRoute, SwapAmountInSplitRoute, VoteOption, MAX_SWAP_HOPS, MAX_SWAP_SPLITS,
+};
 pub use tx::{
     adr36_payload_is_safe, adr36_sign_bytes, adr36_sign_doc, Fee, SignMode, SignerData,
     SigningPreview, UnsignedTx,

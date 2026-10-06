@@ -293,7 +293,8 @@ pub extern "C" fn zunia_decode_direct_tx(sign_doc_hex: *const c_char) -> *mut c_
 /// Deprecated: superseded by [`zunia_build_sign_bytes`], which takes the same
 /// `[{ typeUrl, value }]` payload the client already holds and covers every message type
 /// instead of one. Kept because callers built against it still link to it. There is no reason
-/// to call it in new code, and it cannot express staking, governance, IBC or a contract call.
+/// to call it in new code, and it cannot express staking, governance, IBC, a contract call or
+/// an Osmosis swap.
 #[no_mangle]
 pub extern "C" fn zunia_build_bank_send_direct(
     chain_id: *const c_char,
@@ -708,6 +709,12 @@ mod tests {
 
     const RECIPIENT: &str = "cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz";
 
+    /// ATOM over IBC on Osmosis, and the token both of the vector swap pools hold.
+    const ATOM_ON_OSMOSIS: &str =
+        "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
+    const SWAP_OUT_DENOM: &str =
+        "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
+
     fn vectors() -> Value {
         let path: PathBuf =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/vectors/cosmos-signing.json");
@@ -786,6 +793,7 @@ mod tests {
     fn envelope(name: &str, vectors: &Value) -> String {
         let from = text(&vectors["key"]["addresses"]["cosmos"]);
         let safro = text(&vectors["key"]["addresses"]["addr_safro"]);
+        let osmo = text(&vectors["key"]["addresses"]["osmo"]);
         let value = match name {
             "msg_send" => json!({
                 "from_address": from,
@@ -831,6 +839,38 @@ mod tests {
                 // did not, every swap and every NFT transfer would sign an invalid call.
                 "msg": "eyJzd2FwIjp7Im9mZmVyIjoiMTAwIn19",
                 "funds": [{ "denom": "uatom", "amount": "100" }],
+            }),
+            // Osmosis's native swaps, in the snake_case shape the extension sends. The split
+            // carries its pool ids as JSON numbers, which the bridge accepts and stringifies.
+            "msg_swap_exact_amount_in" => json!({
+                "sender": osmo,
+                "routes": [{ "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM }],
+                "token_in": { "denom": "uosmo", "amount": "9950000" },
+                "token_out_min_amount": "350000",
+            }),
+            "msg_swap_exact_amount_in_multi_hop" => json!({
+                "sender": osmo,
+                "routes": [
+                    { "pool_id": "1", "token_out_denom": ATOM_ON_OSMOSIS },
+                    { "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM },
+                ],
+                "token_in": { "denom": "uosmo", "amount": "10000000" },
+                "token_out_min_amount": "340000",
+            }),
+            "msg_split_route_swap_exact_amount_in" => json!({
+                "sender": osmo,
+                "routes": [
+                    {
+                        "pools": [{ "pool_id": 3498, "token_out_denom": SWAP_OUT_DENOM }],
+                        "token_in_amount": "6000000",
+                    },
+                    {
+                        "pools": [{ "pool_id": 3586, "token_out_denom": SWAP_OUT_DENOM }],
+                        "token_in_amount": "4000000",
+                    },
+                ],
+                "token_in_denom": "uosmo",
+                "token_out_min_amount": "350000",
             }),
             other => panic!("no envelope for vector {other}"),
         };
@@ -975,6 +1015,9 @@ mod tests {
             "msg_vote",
             "msg_transfer_with_timeout",
             "msg_execute_contract",
+            "msg_swap_exact_amount_in",
+            "msg_swap_exact_amount_in_multi_hop",
+            "msg_split_route_swap_exact_amount_in",
         ] {
             let found = case(&vectors, name);
             let msgs = envelope(name, &vectors);
@@ -1205,6 +1248,50 @@ mod tests {
         assert_eq!(
             rendered["msgs"][0]["value"]["option"],
             json!("VOTE_OPTION_NO_WITH_VETO")
+        );
+    }
+
+    #[test]
+    fn preview_describes_an_osmosis_split_swap_and_echoes_it_canonically() {
+        let vectors = vectors();
+        let rendered: Value = serde_json::from_str(&preview(
+            &vectors,
+            &envelope("msg_split_route_swap_exact_amount_in", &vectors),
+            "",
+            "direct",
+        ))
+        .unwrap();
+        assert_eq!(
+            text(&rendered["summaries"][0]),
+            format!(
+                "Swap 10000000 uosmo for at least 350000 {SWAP_OUT_DENOM} through 2 routes \
+                 (pools 3498; 3586)"
+            )
+        );
+        assert_eq!(rendered["spendsFunds"], json!(true));
+        assert_eq!(
+            rendered["counterparties"],
+            json!([text(&vectors["key"]["addresses"]["osmo"])])
+        );
+        // The pool ids went in as JSON numbers; the echo shows what was parsed, which is the
+        // canonical string form every uint64 takes on this wire.
+        let legs = rendered["msgs"][0]["value"]["routes"].as_array().unwrap();
+        assert_eq!(legs.len(), 2);
+        assert_eq!(legs[0]["pools"][0]["pool_id"], json!("3498"));
+        assert_eq!(legs[1]["pools"][0]["pool_id"], json!("3586"));
+    }
+
+    #[test]
+    fn a_swap_with_no_floor_is_refused_with_a_reason() {
+        let vectors = vectors();
+        let no_floor = envelope("msg_swap_exact_amount_in", &vectors).replace(
+            r#""token_out_min_amount":"350000""#,
+            r#""token_out_min_amount":"0""#,
+        );
+        assert!(no_floor.contains(r#""token_out_min_amount":"0""#));
+        assert_error(
+            &sign_bytes(&vectors, &no_floor, "", "direct"),
+            "swap refused: token_out_min_amount is zero",
         );
     }
 

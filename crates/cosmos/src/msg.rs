@@ -8,20 +8,39 @@
 //! # The Amino name trap
 //!
 //! Amino type names are not derived from proto type URLs, they are registered separately, and
-//! at least one differs in a way that looks like a typo:
+//! several differ in ways that look like typos:
 //!
 //! | Proto | Amino |
 //! |---|---|
 //! | `MsgWithdrawDelegatorReward` | `cosmos-sdk/MsgWithdrawDelegationReward` |
+//! | `MsgSwapExactAmountIn` | `osmosis/poolmanager/swap-exact-amount-in` |
+//! | `MsgSplitRouteSwapExactAmountIn` | `osmosis/poolmanager/split-amount-in` |
 //!
-//! `Delegator` in protobuf, `Delegation` in Amino. Deriving one from the other produces a
-//! signature the chain rejects, and the mistake is nearly invisible on review, so the names are
-//! written out literally and pinned by test.
+//! `Delegator` in protobuf, `Delegation` in Amino. Osmosis registers kebab-case names under a
+//! module path, and the split swap's drops "route", "swap" and "exact" altogether. Deriving one
+//! name from the other produces a signature the chain rejects, and the mistake is nearly
+//! invisible on review, so the names are written out literally and pinned by test.
+//!
+//! # Osmosis swaps
+//!
+//! [`Msg::SwapExactAmountIn`] and [`Msg::SplitRouteSwapExactAmountIn`] are the poolmanager's own
+//! swap messages, the ones the Osmosis app signs, and they reach any pair its router can price.
+//! Their proto is `osmosis/poolmanager/v1beta1/tx.proto`, their Amino names are registered in the
+//! poolmanager's `codec.go`, and both encodings are pinned to osmojs, whose telescope-generated
+//! encoders and Amino converters are what that app signs with.
+//!
+//! A swap is checked before it is built, described or signed. Every rule in the poolmanager's
+//! `ValidateBasic` is enforced here, a positive minimum output among them, so a swap the chain
+//! would refuse after the user approved it is refused first. Three rules are the wallet's own:
+//! pool 0 is refused and so is a split leg that spends nothing, both of which the chain only
+//! discovers mid-execution, and route length and split count are capped, which the chain does
+//! not do at all. See [`validate_swap_exact_amount_in`] and
+//! [`validate_split_route_swap_exact_amount_in`].
 
 use serde_json::{json, Value};
 
 use crate::amino::{object_omit_empty, typed};
-use crate::amount::Coin;
+use crate::amount::{add_amounts, validate_amount, validate_denom, Coin};
 use crate::error::{CosmosError, Result};
 use crate::proto::ProtoWriter;
 
@@ -94,6 +113,253 @@ fn stringify_nonzero(value: u64) -> Value {
     }
 }
 
+/// The most pools one swap route may pass through.
+///
+/// Not a chain limit: the poolmanager's `ValidateBasic` accepts a route of any length. It bounds
+/// what an untrusted caller can make the wallet parse and what a signing prompt has to render,
+/// and it sits at twice what Osmosis's own router produces, which stops a route at four pools.
+pub const MAX_SWAP_HOPS: usize = 8;
+
+/// The most legs a split-route swap may divide its input across.
+///
+/// Not a chain limit either. Osmosis's router splits a swap across at most three routes, so
+/// sixteen leaves room for any aggregator while keeping the prompt's list of pools short enough
+/// that a user reads all of it.
+pub const MAX_SWAP_SPLITS: usize = 16;
+
+/// One hop of an Osmosis swap, `osmosis.poolmanager.v1beta1.SwapAmountInRoute`.
+///
+/// Names the pool to swap through and the denom that comes out of it. The denom going in is
+/// implicit: the swap's input for the first hop, the previous hop's output after that.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwapAmountInRoute {
+    pub pool_id: u64,
+    pub token_out_denom: String,
+}
+
+impl SwapAmountInRoute {
+    fn encode_proto(&self) -> Vec<u8> {
+        let mut writer = ProtoWriter::new();
+        writer
+            .uint64(1, self.pool_id)
+            .string(2, &self.token_out_denom);
+        writer.into_bytes()
+    }
+
+    fn encode_amino(&self) -> Value {
+        // A uint64, so quoted like every other 64-bit integer in an Amino document.
+        object_omit_empty([
+            ("pool_id", stringify_nonzero(self.pool_id)),
+            ("token_out_denom", json!(self.token_out_denom)),
+        ])
+    }
+}
+
+/// One leg of a split swap, `osmosis.poolmanager.v1beta1.SwapAmountInSplitRoute`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwapAmountInSplitRoute {
+    /// The pools this leg passes through, in order.
+    pub pools: Vec<SwapAmountInRoute>,
+    /// This leg's share of the input, a `cosmossdk.io/math.Int` as a decimal string. The shares
+    /// add up to the whole amount swapped; there is no separate total on the wire.
+    pub token_in_amount: String,
+}
+
+impl SwapAmountInSplitRoute {
+    fn encode_proto(&self) -> Vec<u8> {
+        let mut writer = ProtoWriter::new();
+        writer
+            .repeated_message(1, &encode_hops(&self.pools))
+            .string(2, &self.token_in_amount);
+        writer.into_bytes()
+    }
+
+    fn encode_amino(&self) -> Value {
+        object_omit_empty([
+            ("pools", amino_hops(&self.pools)),
+            ("token_in_amount", json!(self.token_in_amount)),
+        ])
+    }
+}
+
+/// The rules a single-route swap must meet before the wallet builds, describes or signs it.
+///
+/// The poolmanager's `ValidateBasic` for `MsgSwapExactAmountIn`, plus the wallet's own rules:
+///
+/// - `routes` is not empty, and passes through at most [`MAX_SWAP_HOPS`] pools;
+/// - no hop names pool 0, which does not exist, and every `token_out_denom` is a valid denom;
+/// - `token_in` is a valid coin of more than zero;
+/// - `token_out_min_amount` is a canonical integer greater than zero.
+///
+/// The last is the one that protects the user. The minimum output is the only price limit a
+/// swap carries, and a swap without one is a blank cheque: whoever orders the block, or
+/// sandwiches the transaction, decides what it returns. The chain's `ValidateBasic` refuses zero
+/// as well, but only once the user has already approved and signed it.
+///
+/// The sender is not checked here, because its expected prefix depends on the chain being
+/// signed for. [`Msg::validate_addresses`] checks it.
+pub fn validate_swap_exact_amount_in(
+    routes: &[SwapAmountInRoute],
+    token_in: &Coin,
+    token_out_min_amount: &str,
+) -> Result<()> {
+    if routes.is_empty() {
+        return Err(CosmosError::Swap("routes is empty"));
+    }
+    validate_hops(routes)?;
+    validate_denom(&token_in.denom)?;
+    validate_nonzero_amount(&token_in.amount, "token_in is zero")?;
+    validate_minimum_out(token_out_min_amount)
+}
+
+/// The rules a split-route swap must meet before the wallet builds, describes or signs it.
+///
+/// The poolmanager's `ValidateBasic` for `MsgSplitRouteSwapExactAmountIn`, plus the wallet's
+/// own rules:
+///
+/// - `routes` holds between one and [`MAX_SWAP_SPLITS`] legs;
+/// - every leg passes the single-route hop rules: at least one pool, at most [`MAX_SWAP_HOPS`],
+///   no pool 0, every `token_out_denom` valid;
+/// - every leg spends more than zero;
+/// - every leg ends in the same denom, since the legs' outputs are summed and compared against
+///   one minimum;
+/// - no two legs take the same pools, which the chain refuses as duplicate routes;
+/// - `token_in_denom` is a valid denom, and `token_out_min_amount` is greater than zero, for
+///   the reason given on [`validate_swap_exact_amount_in`].
+pub fn validate_split_route_swap_exact_amount_in(
+    routes: &[SwapAmountInSplitRoute],
+    token_in_denom: &str,
+    token_out_min_amount: &str,
+) -> Result<()> {
+    if routes.is_empty() {
+        return Err(CosmosError::Swap("routes is empty"));
+    }
+    if routes.len() > MAX_SWAP_SPLITS {
+        return Err(CosmosError::Swap("routes has more than 16 split legs"));
+    }
+    validate_denom(token_in_denom)?;
+
+    let mut output: Option<&str> = None;
+    for (index, leg) in routes.iter().enumerate() {
+        if leg.pools.is_empty() {
+            return Err(CosmosError::Swap("a split route has no pools"));
+        }
+        let leg_output = validate_hops(&leg.pools)?;
+        validate_nonzero_amount(
+            &leg.token_in_amount,
+            "a split route's token_in_amount is zero",
+        )?;
+        if output.is_some_and(|first| first != leg_output) {
+            return Err(CosmosError::Swap(
+                "the split routes end in different denoms",
+            ));
+        }
+        output = Some(leg_output);
+        if routes[..index]
+            .iter()
+            .any(|earlier| earlier.pools == leg.pools)
+        {
+            return Err(CosmosError::Swap("two split routes take the same pools"));
+        }
+    }
+    validate_minimum_out(token_out_min_amount)
+}
+
+/// Checks one route's hops and returns the denom the route ends in.
+fn validate_hops(hops: &[SwapAmountInRoute]) -> Result<&str> {
+    if hops.len() > MAX_SWAP_HOPS {
+        return Err(CosmosError::Swap(
+            "a route passes through more than 8 pools",
+        ));
+    }
+    for hop in hops {
+        if hop.pool_id == 0 {
+            return Err(CosmosError::Swap("pool_id 0 does not exist"));
+        }
+        validate_denom(&hop.token_out_denom)?;
+    }
+    hops.last()
+        .map(|hop| hop.token_out_denom.as_str())
+        .ok_or(CosmosError::Swap("routes is empty"))
+}
+
+/// A canonical amount that is not zero. Canonical means "0" is the only way to spell zero.
+fn validate_nonzero_amount(amount: &str, zero: &'static str) -> Result<()> {
+    validate_amount(amount)?;
+    if amount == "0" {
+        return Err(CosmosError::Swap(zero));
+    }
+    Ok(())
+}
+
+fn validate_minimum_out(token_out_min_amount: &str) -> Result<()> {
+    validate_nonzero_amount(
+        token_out_min_amount,
+        "token_out_min_amount is zero, so the swap would fill at any price",
+    )
+}
+
+/// The pools a route passes through, for a signing prompt: `pool 3586`, or `pools 1 → 3586`.
+pub(crate) fn describe_hops(hops: &[SwapAmountInRoute]) -> String {
+    let label = if hops.len() == 1 { "pool" } else { "pools" };
+    format!("{label} {}", hop_ids(hops))
+}
+
+/// The legs of a split swap, for a signing prompt: `2 routes (pools 3498; 3586)`.
+pub(crate) fn describe_split(legs: &[SwapAmountInSplitRoute]) -> String {
+    let pools: usize = legs.iter().map(|leg| leg.pools.len()).sum();
+    let ids: Vec<String> = legs.iter().map(|leg| hop_ids(&leg.pools)).collect();
+    format!(
+        "{} {} ({} {})",
+        legs.len(),
+        if legs.len() == 1 { "route" } else { "routes" },
+        if pools == 1 { "pool" } else { "pools" },
+        ids.join("; ")
+    )
+}
+
+fn hop_ids(hops: &[SwapAmountInRoute]) -> String {
+    let ids: Vec<String> = hops.iter().map(|hop| hop.pool_id.to_string()).collect();
+    ids.join(" → ")
+}
+
+/// The denom a route delivers: the last hop's output.
+pub(crate) fn route_output(hops: &[SwapAmountInRoute]) -> &str {
+    hops.last()
+        .map(|hop| hop.token_out_denom.as_str())
+        .unwrap_or(UNREADABLE_DENOM)
+}
+
+/// The denom a split swap delivers, if every leg agrees on it.
+pub(crate) fn split_output(legs: &[SwapAmountInSplitRoute]) -> &str {
+    let mut outputs = legs.iter().map(|leg| route_output(&leg.pools));
+    match outputs.next() {
+        Some(first) if outputs.all(|other| other == first) => first,
+        _ => UNREADABLE_DENOM,
+    }
+}
+
+/// What a split swap spends in total: the sum of its legs.
+pub(crate) fn split_input(legs: &[SwapAmountInSplitRoute]) -> String {
+    legs.iter()
+        .try_fold("0".to_owned(), |total, leg| {
+            add_amounts(&total, &leg.token_in_amount)
+        })
+        .unwrap_or_else(|| "an unreadable amount of".to_owned())
+}
+
+/// Shown in place of a denom the summary cannot name. Only a swap that fails the rules above can
+/// produce it, and such a swap is never built by the bridge nor described by the decoder.
+const UNREADABLE_DENOM: &str = "an unreadable denom";
+
+fn encode_hops(hops: &[SwapAmountInRoute]) -> Vec<Vec<u8>> {
+    hops.iter().map(SwapAmountInRoute::encode_proto).collect()
+}
+
+fn amino_hops(hops: &[SwapAmountInRoute]) -> Value {
+    Value::Array(hops.iter().map(SwapAmountInRoute::encode_amino).collect())
+}
+
 /// Every message the wallet can build and sign.
 ///
 /// A closed enum rather than a trait object on purpose: the set of things a wallet will sign
@@ -157,6 +423,31 @@ pub enum Msg {
         msg: Vec<u8>,
         funds: Vec<Coin>,
     },
+    /// `osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn`, a swap along one route of pools.
+    ///
+    /// `routes` is the proto's name for what is a single route: the hops in order, each one's
+    /// output feeding the next, so the last hop's `token_out_denom` is what the sender receives.
+    SwapExactAmountIn {
+        sender: String,
+        routes: Vec<SwapAmountInRoute>,
+        token_in: Coin,
+        /// The least the swap may return, a `cosmossdk.io/math.Int` as a decimal string. The
+        /// chain fails the whole swap rather than deliver less. Never zero; see
+        /// [`validate_swap_exact_amount_in`].
+        token_out_min_amount: String,
+    },
+    /// `osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn`, one swap whose input is
+    /// divided across several routes that all end in the same denom.
+    ///
+    /// The amount swapped is the sum of the legs' `token_in_amount`s; the message carries only
+    /// the denom. The minimum applies to the legs' combined output.
+    SplitRouteSwapExactAmountIn {
+        sender: String,
+        routes: Vec<SwapAmountInSplitRoute>,
+        token_in_denom: String,
+        /// The least the legs may return together. Never zero, for the same reason as above.
+        token_out_min_amount: String,
+    },
 }
 
 impl Msg {
@@ -172,6 +463,10 @@ impl Msg {
             Self::Vote { .. } => "/cosmos.gov.v1beta1.MsgVote",
             Self::IbcTransfer { .. } => "/ibc.applications.transfer.v1.MsgTransfer",
             Self::ExecuteContract { .. } => "/cosmwasm.wasm.v1.MsgExecuteContract",
+            Self::SwapExactAmountIn { .. } => "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn",
+            Self::SplitRouteSwapExactAmountIn { .. } => {
+                "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn"
+            }
         }
     }
 
@@ -187,6 +482,10 @@ impl Msg {
             Self::Vote { .. } => "cosmos-sdk/MsgVote",
             Self::IbcTransfer { .. } => "cosmos-sdk/MsgTransfer",
             Self::ExecuteContract { .. } => "wasm/MsgExecuteContract",
+            Self::SwapExactAmountIn { .. } => "osmosis/poolmanager/swap-exact-amount-in",
+            // "split-amount-in", not "split-route-swap-exact-amount-in". See the module
+            // documentation.
+            Self::SplitRouteSwapExactAmountIn { .. } => "osmosis/poolmanager/split-amount-in",
         }
     }
 
@@ -288,6 +587,37 @@ impl Msg {
                     .string(2, contract)
                     .bytes(3, msg)
                     .repeated_message(5, &encode_coins(funds));
+            }
+            Self::SwapExactAmountIn {
+                sender,
+                routes,
+                token_in,
+                token_out_min_amount,
+            } => {
+                // `token_in` is `(gogoproto.nullable) = false`, so always emitted, as for
+                // `Delegate`. The minimum is a `math.Int` carried as a string, and never empty
+                // once validated, so it is always emitted too.
+                writer
+                    .string(1, sender)
+                    .repeated_message(2, &encode_hops(routes))
+                    .message_always(3, &encode_coin(token_in))
+                    .string(4, token_out_min_amount);
+            }
+            Self::SplitRouteSwapExactAmountIn {
+                sender,
+                routes,
+                token_in_denom,
+                token_out_min_amount,
+            } => {
+                let legs: Vec<Vec<u8>> = routes
+                    .iter()
+                    .map(SwapAmountInSplitRoute::encode_proto)
+                    .collect();
+                writer
+                    .string(1, sender)
+                    .repeated_message(2, &legs)
+                    .string(3, token_in_denom)
+                    .string(4, token_out_min_amount);
             }
         }
         writer.into_bytes()
@@ -395,6 +725,36 @@ impl Msg {
                     ("sender", json!(sender)),
                 ])
             }
+            Self::SwapExactAmountIn {
+                sender,
+                routes,
+                token_in,
+                token_out_min_amount,
+            } => object_omit_empty([
+                ("routes", amino_hops(routes)),
+                ("sender", json!(sender)),
+                ("token_in", amino_coin(token_in)),
+                ("token_out_min_amount", json!(token_out_min_amount)),
+            ]),
+            Self::SplitRouteSwapExactAmountIn {
+                sender,
+                routes,
+                token_in_denom,
+                token_out_min_amount,
+            } => object_omit_empty([
+                (
+                    "routes",
+                    Value::Array(
+                        routes
+                            .iter()
+                            .map(SwapAmountInSplitRoute::encode_amino)
+                            .collect(),
+                    ),
+                ),
+                ("sender", json!(sender)),
+                ("token_in_denom", json!(token_in_denom)),
+                ("token_out_min_amount", json!(token_out_min_amount)),
+            ]),
         };
         typed(self.amino_type(), value)
     }
@@ -480,6 +840,34 @@ impl Msg {
                 };
                 format!("Execute \"{action}\" on {contract}{funds_text}")
             }
+            // What goes in, the floor on what comes out, and the pools in between. The floor is
+            // the number a user must check: it is the only price limit the swap carries.
+            Self::SwapExactAmountIn {
+                routes,
+                token_in,
+                token_out_min_amount,
+                ..
+            } => format!(
+                "Swap {} {} for at least {} {} through {}",
+                token_in.amount,
+                token_in.denom,
+                token_out_min_amount,
+                route_output(routes),
+                describe_hops(routes)
+            ),
+            Self::SplitRouteSwapExactAmountIn {
+                routes,
+                token_in_denom,
+                token_out_min_amount,
+                ..
+            } => format!(
+                "Swap {} {} for at least {} {} through {}",
+                split_input(routes),
+                token_in_denom,
+                token_out_min_amount,
+                split_output(routes),
+                describe_split(routes)
+            ),
         }
     }
 
@@ -490,7 +878,12 @@ impl Msg {
     pub fn spends_funds(&self) -> bool {
         match self {
             Self::Send { amount, .. } => !amount.is_empty(),
-            Self::Delegate { .. } | Self::IbcTransfer { .. } => true,
+            // A swap's input leaves the account whatever comes back, and a validated swap never
+            // has an input of zero.
+            Self::Delegate { .. }
+            | Self::IbcTransfer { .. }
+            | Self::SwapExactAmountIn { .. }
+            | Self::SplitRouteSwapExactAmountIn { .. } => true,
             Self::ExecuteContract { funds, .. } => !funds.is_empty(),
             Self::Undelegate { .. }
             | Self::BeginRedelegate { .. }
@@ -539,6 +932,10 @@ impl Msg {
             Self::ExecuteContract {
                 sender, contract, ..
             } => vec![sender, contract],
+            // Pools are named by number, not by address, so the sender is the only account a
+            // swap touches.
+            Self::SwapExactAmountIn { sender, .. }
+            | Self::SplitRouteSwapExactAmountIn { sender, .. } => vec![sender],
         }
     }
 
@@ -547,6 +944,9 @@ impl Msg {
     /// The IBC receiver is exempt: an ICS-20 transfer's destination is on another chain and
     /// legitimately has a different prefix. That exemption is the reason this cannot be a blanket
     /// loop over [`Self::addresses`].
+    ///
+    /// Swaps are also held to their rules here, not only at the JSON bridge: a typed [`Msg`] can
+    /// be built without passing through the bridge, and this is the last check before signing.
     pub fn validate_addresses(&self, prefix: &str) -> Result<()> {
         let validator_prefix = format!("{prefix}valoper");
 
@@ -607,6 +1007,28 @@ impl Msg {
                 check(sender, prefix)?;
                 // The contract is 32 bytes. The sender stays a 20-byte account.
                 zunia_kernel::validate_contract_address(contract, prefix)?;
+            }
+            Self::SwapExactAmountIn {
+                sender,
+                routes,
+                token_in,
+                token_out_min_amount,
+            } => {
+                check(sender, prefix)?;
+                validate_swap_exact_amount_in(routes, token_in, token_out_min_amount)?;
+            }
+            Self::SplitRouteSwapExactAmountIn {
+                sender,
+                routes,
+                token_in_denom,
+                token_out_min_amount,
+            } => {
+                check(sender, prefix)?;
+                validate_split_route_swap_exact_amount_in(
+                    routes,
+                    token_in_denom,
+                    token_out_min_amount,
+                )?;
             }
         }
         Ok(())
@@ -688,6 +1110,509 @@ mod tests {
             }
             .amino_type(),
             "cosmos-sdk/MsgTransfer"
+        );
+        assert_eq!(
+            swap().type_url(),
+            "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn"
+        );
+        assert_eq!(
+            swap().amino_type(),
+            "osmosis/poolmanager/swap-exact-amount-in"
+        );
+        assert_eq!(
+            split().type_url(),
+            "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn"
+        );
+        assert_eq!(
+            split().amino_type(),
+            "osmosis/poolmanager/split-amount-in",
+            "not split-route-swap-exact-amount-in: the registered name drops three words"
+        );
+    }
+
+    const OSMO_SENDER: &str = "osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8";
+    const ATOM: &str = "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
+    const OUT: &str = "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
+
+    fn hop(pool_id: u64, token_out_denom: &str) -> SwapAmountInRoute {
+        SwapAmountInRoute {
+            pool_id,
+            token_out_denom: token_out_denom.to_owned(),
+        }
+    }
+
+    fn leg(pools: Vec<SwapAmountInRoute>, token_in_amount: &str) -> SwapAmountInSplitRoute {
+        SwapAmountInSplitRoute {
+            pools,
+            token_in_amount: token_in_amount.to_owned(),
+        }
+    }
+
+    /// The single-route swap the extension sends.
+    fn swap() -> Msg {
+        Msg::SwapExactAmountIn {
+            sender: OSMO_SENDER.to_owned(),
+            routes: vec![hop(3586, OUT)],
+            token_in: Coin::new("uosmo", "9950000").unwrap(),
+            token_out_min_amount: "350000".to_owned(),
+        }
+    }
+
+    /// The router's real split for 9.95 OSMO: 5.97 through pool 3498, 3.98 through 3586.
+    fn split() -> Msg {
+        Msg::SplitRouteSwapExactAmountIn {
+            sender: OSMO_SENDER.to_owned(),
+            routes: vec![
+                leg(vec![hop(3498, OUT)], "5970000"),
+                leg(vec![hop(3586, OUT)], "3980000"),
+            ],
+            token_in_denom: "uosmo".to_owned(),
+            token_out_min_amount: "350000".to_owned(),
+        }
+    }
+
+    #[test]
+    fn swap_amino_shapes() {
+        // Pinned to osmojs's Amino converter in tests/golden_vectors.rs; spelled out here so the
+        // shape is reviewable next to the encoder. pool_id is quoted, like every uint64.
+        assert_eq!(
+            to_canonical_string(&swap().encode_amino()),
+            r#"{"type":"osmosis/poolmanager/swap-exact-amount-in","value":{"routes":[{"pool_id":"3586","token_out_denom":"$OUT"}],"sender":"osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8","token_in":{"amount":"9950000","denom":"uosmo"},"token_out_min_amount":"350000"}}"#
+                .replace("$OUT", OUT)
+        );
+        assert_eq!(
+            to_canonical_string(&split().encode_amino()),
+            r#"{"type":"osmosis/poolmanager/split-amount-in","value":{"routes":[{"pools":[{"pool_id":"3498","token_out_denom":"$OUT"}],"token_in_amount":"5970000"},{"pools":[{"pool_id":"3586","token_out_denom":"$OUT"}],"token_in_amount":"3980000"}],"sender":"osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8","token_in_denom":"uosmo","token_out_min_amount":"350000"}}"#
+                .replace("$OUT", OUT)
+        );
+    }
+
+    #[test]
+    fn swap_proto_field_numbers() {
+        use crate::proto::{decode_fields, find_field};
+
+        // MsgSwapExactAmountIn: sender 1, routes 2 (one entry per hop, in order), token_in 3,
+        // token_out_min_amount 4.
+        let msg = Msg::SwapExactAmountIn {
+            sender: OSMO_SENDER.to_owned(),
+            routes: vec![hop(1, ATOM), hop(3586, OUT)],
+            token_in: Coin::new("uosmo", "10000000").unwrap(),
+            token_out_min_amount: "340000".to_owned(),
+        };
+        let fields = decode_fields(&msg.encode_proto()).unwrap();
+        let tags: Vec<u32> = fields.iter().map(|f| f.tag).collect();
+        assert_eq!(tags, vec![1, 2, 2, 3, 4]);
+        assert_eq!(fields[0].value.as_string().unwrap(), OSMO_SENDER);
+        assert_eq!(fields[4].value.as_string().unwrap(), "340000");
+
+        // SwapAmountInRoute: pool_id 1 as a varint, token_out_denom 2.
+        let first = decode_fields(fields[1].value.as_bytes().unwrap()).unwrap();
+        assert_eq!(first.len(), 2);
+        assert_eq!(first[0].tag, 1);
+        assert_eq!(first[0].value.as_varint().unwrap(), 1);
+        assert_eq!(first[1].tag, 2);
+        assert_eq!(first[1].value.as_string().unwrap(), ATOM);
+        let second = decode_fields(fields[2].value.as_bytes().unwrap()).unwrap();
+        assert_eq!(second[0].value.as_varint().unwrap(), 3586);
+
+        // token_in is a Coin: denom 1, amount 2.
+        let coin = decode_fields(fields[3].value.as_bytes().unwrap()).unwrap();
+        assert_eq!(find_field(&coin, 1).unwrap().as_string().unwrap(), "uosmo");
+        assert_eq!(
+            find_field(&coin, 2).unwrap().as_string().unwrap(),
+            "10000000"
+        );
+
+        // MsgSplitRouteSwapExactAmountIn: sender 1, routes 2 (one entry per leg), token_in_denom
+        // 3, token_out_min_amount 4. SwapAmountInSplitRoute: pools 1, token_in_amount 2.
+        let fields = decode_fields(&split().encode_proto()).unwrap();
+        let tags: Vec<u32> = fields.iter().map(|f| f.tag).collect();
+        assert_eq!(tags, vec![1, 2, 2, 3, 4]);
+        assert_eq!(fields[3].value.as_string().unwrap(), "uosmo");
+        assert_eq!(fields[4].value.as_string().unwrap(), "350000");
+        let first_leg = decode_fields(fields[1].value.as_bytes().unwrap()).unwrap();
+        let leg_tags: Vec<u32> = first_leg.iter().map(|f| f.tag).collect();
+        assert_eq!(leg_tags, vec![1, 2]);
+        assert_eq!(first_leg[1].value.as_string().unwrap(), "5970000");
+        let leg_hop = decode_fields(first_leg[0].value.as_bytes().unwrap()).unwrap();
+        assert_eq!(leg_hop[0].value.as_varint().unwrap(), 3498);
+    }
+
+    #[test]
+    fn swap_token_in_is_emitted_even_when_empty() {
+        // `(gogoproto.nullable) = false`, as on Delegate's amount: the field is present even
+        // when the coin encodes to nothing. Never reachable through the bridge, which refuses an
+        // empty coin, so this states the encoder's rule rather than a case that ships.
+        let msg = Msg::SwapExactAmountIn {
+            sender: OSMO_SENDER.to_owned(),
+            routes: vec![],
+            token_in: Coin {
+                denom: String::new(),
+                amount: String::new(),
+            },
+            token_out_min_amount: String::new(),
+        };
+        let fields = crate::proto::decode_fields(&msg.encode_proto()).unwrap();
+        assert_eq!(
+            crate::proto::find_field(&fields, 3)
+                .unwrap()
+                .as_bytes()
+                .unwrap(),
+            b""
+        );
+    }
+
+    #[test]
+    fn swap_summaries_name_the_input_the_floor_the_output_and_the_pools() {
+        assert_eq!(
+            swap().summary(),
+            format!("Swap 9950000 uosmo for at least 350000 {OUT} through pool 3586")
+        );
+        // A split shows the total it spends, which no single field on the wire carries.
+        assert_eq!(
+            split().summary(),
+            format!(
+                "Swap 9950000 uosmo for at least 350000 {OUT} through 2 routes (pools 3498; 3586)"
+            )
+        );
+
+        let multi_hop = Msg::SwapExactAmountIn {
+            sender: OSMO_SENDER.to_owned(),
+            routes: vec![hop(1, ATOM), hop(3586, OUT)],
+            token_in: Coin::new("uosmo", "10000000").unwrap(),
+            token_out_min_amount: "340000".to_owned(),
+        };
+        // The output named is the last hop's, not the first's: ATOM is only passed through.
+        assert_eq!(
+            multi_hop.summary(),
+            format!("Swap 10000000 uosmo for at least 340000 {OUT} through pools 1 → 3586")
+        );
+
+        let one_leg = Msg::SplitRouteSwapExactAmountIn {
+            sender: OSMO_SENDER.to_owned(),
+            routes: vec![leg(vec![hop(3586, OUT)], "1")],
+            token_in_denom: "uosmo".to_owned(),
+            token_out_min_amount: "1".to_owned(),
+        };
+        assert_eq!(
+            one_leg.summary(),
+            format!("Swap 1 uosmo for at least 1 {OUT} through 1 route (pool 3586)")
+        );
+
+        let mixed = Msg::SplitRouteSwapExactAmountIn {
+            sender: OSMO_SENDER.to_owned(),
+            routes: vec![
+                leg(vec![hop(1, ATOM), hop(3586, OUT)], "6000000"),
+                leg(vec![hop(3498, OUT)], "4000000"),
+            ],
+            token_in_denom: "uosmo".to_owned(),
+            token_out_min_amount: "350000".to_owned(),
+        };
+        assert_eq!(
+            mixed.summary(),
+            format!(
+                "Swap 10000000 uosmo for at least 350000 {OUT} through 2 routes \
+                 (pools 1 → 3586; 3498)"
+            )
+        );
+    }
+
+    #[test]
+    fn swaps_spend_and_name_only_the_sender() {
+        assert!(swap().spends_funds());
+        assert!(split().spends_funds());
+        assert_eq!(swap().addresses(), vec![OSMO_SENDER]);
+        assert_eq!(split().addresses(), vec![OSMO_SENDER]);
+    }
+
+    #[test]
+    fn a_swap_sender_must_carry_the_chain_prefix() {
+        assert!(swap().validate_addresses("osmo").is_ok());
+        assert!(split().validate_addresses("osmo").is_ok());
+        // The same key's address on Osmosis, offered for a Cosmos Hub transaction.
+        assert_eq!(
+            swap().validate_addresses("cosmos").unwrap_err(),
+            CosmosError::Address
+        );
+        assert_eq!(
+            split().validate_addresses("cosmos").unwrap_err(),
+            CosmosError::Address
+        );
+    }
+
+    #[test]
+    fn the_swap_rules_hold_at_the_signing_door_too() {
+        // A typed Msg can skip the JSON bridge, so validate_addresses, which runs before every
+        // signature the bindings make, applies the swap rules again.
+        let Msg::SwapExactAmountIn {
+            sender,
+            routes,
+            token_in,
+            ..
+        } = swap()
+        else {
+            unreachable!()
+        };
+        let no_floor = Msg::SwapExactAmountIn {
+            sender,
+            routes,
+            token_in,
+            token_out_min_amount: "0".to_owned(),
+        };
+        assert!(matches!(
+            no_floor.validate_addresses("osmo").unwrap_err(),
+            CosmosError::Swap(_)
+        ));
+
+        let Msg::SplitRouteSwapExactAmountIn { sender, routes, .. } = split() else {
+            unreachable!()
+        };
+        let bad_denom = Msg::SplitRouteSwapExactAmountIn {
+            sender,
+            routes,
+            token_in_denom: "u".to_owned(),
+            token_out_min_amount: "350000".to_owned(),
+        };
+        assert_eq!(
+            bad_denom.validate_addresses("osmo").unwrap_err(),
+            CosmosError::Denom
+        );
+    }
+
+    #[test]
+    fn a_swap_with_no_price_floor_is_refused() {
+        // The blank cheque: a zero minimum lets whoever orders the block decide the price.
+        let token_in = Coin::new("uosmo", "9950000").unwrap();
+        let refused = validate_swap_exact_amount_in(&[hop(3586, OUT)], &token_in, "0").unwrap_err();
+        assert_eq!(
+            refused,
+            CosmosError::Swap("token_out_min_amount is zero, so the swap would fill at any price")
+        );
+        assert_eq!(
+            refused.to_string(),
+            "swap refused: token_out_min_amount is zero, so the swap would fill at any price"
+        );
+        assert_eq!(
+            validate_split_route_swap_exact_amount_in(
+                &[leg(vec![hop(3586, OUT)], "9950000")],
+                "uosmo",
+                "0"
+            )
+            .unwrap_err(),
+            refused
+        );
+        // One unit is a floor, however low; the prompt shows it and the user decides.
+        assert!(validate_swap_exact_amount_in(&[hop(3586, OUT)], &token_in, "1").is_ok());
+    }
+
+    #[test]
+    fn single_route_swap_rules() {
+        let coin = |denom: &str, amount: &str| Coin {
+            denom: denom.to_owned(),
+            amount: amount.to_owned(),
+        };
+        let good = coin("uosmo", "9950000");
+        let cases = [
+            (
+                vec![],
+                good.clone(),
+                "350000",
+                CosmosError::Swap("routes is empty"),
+            ),
+            (
+                vec![hop(0, OUT)],
+                good.clone(),
+                "350000",
+                CosmosError::Swap("pool_id 0 does not exist"),
+            ),
+            (
+                vec![hop(1, ATOM), hop(0, OUT)],
+                good.clone(),
+                "350000",
+                CosmosError::Swap("pool_id 0 does not exist"),
+            ),
+            (
+                vec![hop(3586, "")],
+                good.clone(),
+                "350000",
+                CosmosError::Denom,
+            ),
+            (
+                vec![hop(3586, "1nvalid")],
+                good.clone(),
+                "350000",
+                CosmosError::Denom,
+            ),
+            (
+                vec![hop(3586, "ibc/794C\u{202e}")],
+                good.clone(),
+                "350000",
+                CosmosError::Denom,
+            ),
+            (
+                vec![hop(3586, OUT)],
+                coin("uosmo", "0"),
+                "350000",
+                CosmosError::Swap("token_in is zero"),
+            ),
+            (
+                vec![hop(3586, OUT)],
+                coin("uosmo", "09950000"),
+                "350000",
+                CosmosError::Amount,
+            ),
+            (
+                vec![hop(3586, OUT)],
+                coin("u", "9950000"),
+                "350000",
+                CosmosError::Denom,
+            ),
+            (vec![hop(3586, OUT)], good.clone(), "", CosmosError::Amount),
+            (
+                vec![hop(3586, OUT)],
+                good.clone(),
+                "-1",
+                CosmosError::Amount,
+            ),
+            (
+                vec![hop(3586, OUT)],
+                good.clone(),
+                "1.5",
+                CosmosError::Amount,
+            ),
+            (
+                vec![hop(3586, OUT)],
+                good.clone(),
+                "0350000",
+                CosmosError::Amount,
+            ),
+            (
+                vec![hop(3586, OUT)],
+                good.clone(),
+                "3.5e5",
+                CosmosError::Amount,
+            ),
+        ];
+        for (routes, token_in, min, expected) in cases {
+            assert_eq!(
+                validate_swap_exact_amount_in(&routes, &token_in, min).unwrap_err(),
+                expected,
+                "{routes:?} {token_in:?} {min:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn split_route_swap_rules() {
+        let cases = [
+            (vec![], "uosmo", CosmosError::Swap("routes is empty")),
+            (
+                vec![leg(vec![], "1")],
+                "uosmo",
+                CosmosError::Swap("a split route has no pools"),
+            ),
+            (
+                vec![leg(vec![hop(3498, OUT)], "0")],
+                "uosmo",
+                CosmosError::Swap("a split route's token_in_amount is zero"),
+            ),
+            (
+                vec![leg(vec![hop(3498, OUT)], "06000000")],
+                "uosmo",
+                CosmosError::Amount,
+            ),
+            (
+                vec![leg(vec![hop(0, OUT)], "1")],
+                "uosmo",
+                CosmosError::Swap("pool_id 0 does not exist"),
+            ),
+            // Every leg's output is summed against one minimum, so they must agree on what it
+            // is denominated in. The chain's ValidateBasic refuses this too, after signing.
+            (
+                vec![
+                    leg(vec![hop(3498, OUT)], "6000000"),
+                    leg(vec![hop(1, ATOM)], "4000000"),
+                ],
+                "uosmo",
+                CosmosError::Swap("the split routes end in different denoms"),
+            ),
+            // The chain's ErrDuplicateRoutesNotAllowed: the same pools twice, even with
+            // different shares.
+            (
+                vec![
+                    leg(vec![hop(3498, OUT)], "6000000"),
+                    leg(vec![hop(3498, OUT)], "4000000"),
+                ],
+                "uosmo",
+                CosmosError::Swap("two split routes take the same pools"),
+            ),
+            (
+                vec![leg(vec![hop(3498, OUT)], "1")],
+                "u",
+                CosmosError::Denom,
+            ),
+            (vec![leg(vec![hop(3498, OUT)], "1")], "", CosmosError::Denom),
+        ];
+        for (routes, token_in_denom, expected) in cases {
+            assert_eq!(
+                validate_split_route_swap_exact_amount_in(&routes, token_in_denom, "350000")
+                    .unwrap_err(),
+                expected,
+                "{routes:?} {token_in_denom:?}"
+            );
+        }
+
+        // Legs that share a pool but not a route are different routes, and the chain accepts
+        // them.
+        assert!(validate_split_route_swap_exact_amount_in(
+            &[
+                leg(vec![hop(1, ATOM), hop(3586, OUT)], "6000000"),
+                leg(vec![hop(3586, OUT)], "4000000"),
+            ],
+            "uosmo",
+            "350000"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn route_length_and_split_count_are_capped() {
+        let token_in = Coin::new("uosmo", "1000000").unwrap();
+        let hops = |count: u64| -> Vec<SwapAmountInRoute> {
+            (1..=count).map(|pool_id| hop(pool_id, OUT)).collect()
+        };
+        let max_hops = MAX_SWAP_HOPS as u64;
+        assert!(validate_swap_exact_amount_in(&hops(max_hops), &token_in, "1").is_ok());
+        let too_long = validate_swap_exact_amount_in(&hops(max_hops + 1), &token_in, "1")
+            .unwrap_err()
+            .to_string();
+        // The reason states the cap literally, so it must agree with the constant.
+        assert!(
+            too_long.contains(&format!("more than {MAX_SWAP_HOPS} pools")),
+            "{too_long}"
+        );
+        // The hop cap applies inside every split leg as well.
+        assert!(validate_split_route_swap_exact_amount_in(
+            &[leg(hops(max_hops + 1), "1")],
+            "uosmo",
+            "1"
+        )
+        .is_err());
+
+        let legs = |count: u64| -> Vec<SwapAmountInSplitRoute> {
+            (1..=count)
+                .map(|pool_id| leg(vec![hop(pool_id, OUT)], "1"))
+                .collect()
+        };
+        let max_splits = MAX_SWAP_SPLITS as u64;
+        assert!(validate_split_route_swap_exact_amount_in(&legs(max_splits), "uosmo", "1").is_ok());
+        let too_many =
+            validate_split_route_swap_exact_amount_in(&legs(max_splits + 1), "uosmo", "1")
+                .unwrap_err()
+                .to_string();
+        assert!(
+            too_many.contains(&format!("more than {MAX_SWAP_SPLITS} split legs")),
+            "{too_many}"
         );
     }
 
@@ -996,6 +1921,28 @@ mod tests {
             }
             .addresses(),
             vec!["d", "s", "t"]
+        );
+    }
+
+    #[test]
+    fn swap_variants_differ_in_shape_not_just_in_name() {
+        // A one-leg split and a single-route swap through the same pool move the same funds,
+        // but they are different messages on the wire and in Amino, so neither can stand in for
+        // the other.
+        let single = swap();
+        let one_leg = Msg::SplitRouteSwapExactAmountIn {
+            sender: OSMO_SENDER.to_owned(),
+            routes: vec![leg(vec![hop(3586, OUT)], "9950000")],
+            token_in_denom: "uosmo".to_owned(),
+            token_out_min_amount: "350000".to_owned(),
+        };
+        assert_ne!(single.encode_proto(), one_leg.encode_proto());
+        assert_ne!(single.encode_amino(), one_leg.encode_amino());
+        assert_ne!(single.type_url(), one_leg.type_url());
+        assert_eq!(
+            single.summary().replace("pool 3586", ""),
+            one_leg.summary().replace("1 route (pool 3586)", ""),
+            "the prompt says the same thing about the same swap"
         );
     }
 

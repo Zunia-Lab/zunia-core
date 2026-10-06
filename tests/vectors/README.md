@@ -27,11 +27,18 @@ registry actually supplies. The BIP vectors cannot catch a wrong coin type or a 
 flag, and either produces a valid address belonging to nobody.
 
 **`cosmos-signing.json`** holds `SIGN_MODE_DIRECT` and `SIGN_MODE_LEGACY_AMINO_JSON` sign bytes
-for ten message types plus three ADR-36 cases, generated with CosmJS. Asserted byte for byte.
-Cosmos signs bytes, so anything short of byte equality proves nothing: a one-byte difference
-yields a signature that verifies against nothing, and the chain reports it as `unauthorized`
-with no hint that the encoding was at fault. This set has already caught one such bug, an
-omitted non-nullable `timeout_height` in `MsgTransfer`.
+for thirteen transactions covering ten message types, plus three ADR-36 cases, generated with
+CosmJS. Asserted byte for byte. Cosmos signs bytes, so anything short of byte equality proves
+nothing: a one-byte difference yields a signature that verifies against nothing, and the chain
+reports it as `unauthorized` with no hint that the encoding was at fault. This set has already
+caught one such bug, an omitted non-nullable `timeout_height` in `MsgTransfer`.
+
+Three of those transactions are Osmosis poolmanager swaps, `MsgSwapExactAmountIn` over one hop
+and over two, and `MsgSplitRouteSwapExactAmountIn` split 60/40 across two pools, using real
+mainnet pools and denoms. cosmjs-types has no Osmosis messages, so for these the message bytes,
+the type URL, the Amino name and the Amino JSON all come from osmojs (its telescope-generated
+encoders and Amino converters, the code the Osmosis app signs with) and CosmJS assembles the
+two sign documents around them as for every other case.
 
 **`evm-signing.json`** holds eight transactions (legacy, EIP-2930, EIP-1559, contract creation,
 a chain id large enough to break a 32-bit `v`, and zero-valued fee and amount fields), eight
@@ -67,7 +74,7 @@ cd generate && pnpm install
 pnpm generate:all
 
 # Or individually.
-node generate.mjs          # Cosmos, via CosmJS
+node generate.mjs          # Cosmos, via CosmJS, with osmojs for the Osmosis swaps
 node address-vectors.mjs   # per-chain addresses, via CosmJS
 node evm-vectors.mjs       # Ethereum, via ethers v6
 node svm-vectors.mjs       # Solana, via @solana/web3.js

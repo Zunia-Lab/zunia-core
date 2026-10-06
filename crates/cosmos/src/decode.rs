@@ -13,8 +13,12 @@ use serde_json::Value;
 
 use crate::amount::Coin;
 use crate::error::{CosmosError, Result};
-use crate::msg::VoteOption;
-use crate::proto::{decode_fields, find_all, find_field};
+use crate::msg::{
+    describe_hops, describe_split, route_output, split_input, split_output,
+    validate_split_route_swap_exact_amount_in, validate_swap_exact_amount_in, SwapAmountInRoute,
+    SwapAmountInSplitRoute, VoteOption,
+};
+use crate::proto::{decode_fields, find_all, find_field, Field};
 
 /// One message from a transaction, decoded as far as this build can manage.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +68,23 @@ pub enum DecodedMsg {
         /// The top-level key, which is the action by CosmWasm convention.
         action: Option<String>,
         funds: Vec<Coin>,
+    },
+    /// `osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn`, the swap the Osmosis app signs for a
+    /// single route.
+    SwapExactAmountIn {
+        sender: String,
+        /// The hops in order; the last one's `token_out_denom` is what the sender receives.
+        routes: Vec<SwapAmountInRoute>,
+        token_in: Option<Coin>,
+        token_out_min_amount: String,
+    },
+    /// `osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn`, the same swap with its
+    /// input divided across several routes.
+    SplitRouteSwapExactAmountIn {
+        sender: String,
+        routes: Vec<SwapAmountInSplitRoute>,
+        token_in_denom: String,
+        token_out_min_amount: String,
     },
     /// A message this build cannot decode.
     ///
@@ -144,6 +165,30 @@ impl DecodedMsg {
                 };
                 format!("Execute \"{action}\" on {contract}{funds_text}")
             }
+            // Word for word what `Msg::summary` says, so the prompt reads the same whether the
+            // wallet or a dApp built the swap.
+            Self::SwapExactAmountIn {
+                routes,
+                token_in,
+                token_out_min_amount,
+                ..
+            } => format!(
+                "Swap {} for at least {token_out_min_amount} {} through {}",
+                describe_coin(token_in),
+                route_output(routes),
+                describe_hops(routes)
+            ),
+            Self::SplitRouteSwapExactAmountIn {
+                routes,
+                token_in_denom,
+                token_out_min_amount,
+                ..
+            } => format!(
+                "Swap {} {token_in_denom} for at least {token_out_min_amount} {} through {}",
+                split_input(routes),
+                split_output(routes),
+                describe_split(routes)
+            ),
             // Deliberately alarming. The user is being asked to authorise something the wallet
             // cannot read, and the prompt must say so rather than soften it.
             Self::Unknown {
@@ -184,6 +229,8 @@ impl DecodedMsg {
             Self::ExecuteContract {
                 sender, contract, ..
             } => vec![sender, contract],
+            Self::SwapExactAmountIn { sender, .. }
+            | Self::SplitRouteSwapExactAmountIn { sender, .. } => vec![sender],
             Self::Unknown { .. } => Vec::new(),
         }
     }
@@ -427,6 +474,40 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
                 funds: coins_at(5)?,
             }
         }
+        "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn" => {
+            refuse_repeated(&fields, &[1, 3, 4])?;
+            let token_in = match find_field(&fields, 3) {
+                Some(coin) => {
+                    let bytes = coin.as_bytes()?;
+                    refuse_repeated(&decode_fields(bytes)?, &[1, 2])?;
+                    Some(decode_coin(bytes)?)
+                }
+                None => None,
+            };
+            let mut routes = Vec::new();
+            for hop in find_all(&fields, 2) {
+                routes.push(decode_hop(hop.as_bytes()?)?);
+            }
+            DecodedMsg::SwapExactAmountIn {
+                sender: string_at(1)?,
+                routes,
+                token_in,
+                token_out_min_amount: string_at(4)?,
+            }
+        }
+        "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn" => {
+            refuse_repeated(&fields, &[1, 3, 4])?;
+            let mut routes = Vec::new();
+            for leg in find_all(&fields, 2) {
+                routes.push(decode_split_leg(leg.as_bytes()?)?);
+            }
+            DecodedMsg::SplitRouteSwapExactAmountIn {
+                sender: string_at(1)?,
+                routes,
+                token_in_denom: string_at(3)?,
+                token_out_min_amount: string_at(4)?,
+            }
+        }
         _ => return Ok(None),
     };
 
@@ -508,6 +589,8 @@ fn local_addresses_are_bech32(msg: &DecodedMsg) -> bool {
         // The sender is a local account, but the receiver may legitimately be an address on
         // another chain entirely, so only the sender is checked here.
         DecodedMsg::IbcTransfer { sender, .. } => vec![sender],
+        DecodedMsg::SwapExactAmountIn { sender, .. }
+        | DecodedMsg::SplitRouteSwapExactAmountIn { sender, .. } => vec![sender],
         DecodedMsg::Unknown { .. } => Vec::new(),
     };
 
@@ -537,11 +620,83 @@ fn is_complete(msg: &DecodedMsg) -> bool {
         // A contract call whose payload will not parse cannot be described, and "execute an
         // unreadable action" is the definition of blind signing.
         DecodedMsg::ExecuteContract { msg, action, .. } => msg.is_some() && action.is_some(),
+        // The same rules the bridge builds under. A swap that breaks one either cannot execute
+        // or is outside what this wallet signs, and neither is something to describe
+        // confidently: "for at least 0" reads like a number while meaning "at any price".
+        // Demoted, it reaches the blind-signing gate instead.
+        DecodedMsg::SwapExactAmountIn {
+            routes,
+            token_in,
+            token_out_min_amount,
+            ..
+        } => token_in.as_ref().is_some_and(|token_in| {
+            validate_swap_exact_amount_in(routes, token_in, token_out_min_amount).is_ok()
+        }),
+        DecodedMsg::SplitRouteSwapExactAmountIn {
+            routes,
+            token_in_denom,
+            token_out_min_amount,
+            ..
+        } => {
+            validate_split_route_swap_exact_amount_in(routes, token_in_denom, token_out_min_amount)
+                .is_ok()
+        }
         // Already the honest answer.
         DecodedMsg::Unknown { .. } => true,
     };
 
     addresses_present && specifics && local_addresses_are_bech32(msg)
+}
+
+/// Refuses a message in which a singular field appears more than once.
+///
+/// Protobuf lets a later occurrence of a singular field override an earlier one, and the chain
+/// decodes that way: the last value wins. [`find_field`] returns the first. A document carrying
+/// the same field twice could therefore show the user one value and execute another, and in a
+/// swap the field most worth forging is `token_out_min_amount`: a respectable floor first, zero
+/// second. No encoder emits a singular field twice, so refusing it costs nothing legitimate, and
+/// the message falls through to [`DecodedMsg::Unknown`].
+fn refuse_repeated(fields: &[Field], singular: &[u32]) -> Result<()> {
+    for tag in singular {
+        if fields.iter().filter(|field| field.tag == *tag).count() > 1 {
+            return Err(CosmosError::Decode);
+        }
+    }
+    Ok(())
+}
+
+/// `osmosis.poolmanager.v1beta1.SwapAmountInRoute`. An absent pool id reads as 0 and an absent
+/// denom as empty, both of which the swap rules refuse.
+fn decode_hop(bytes: &[u8]) -> Result<SwapAmountInRoute> {
+    let fields = decode_fields(bytes)?;
+    refuse_repeated(&fields, &[1, 2])?;
+    Ok(SwapAmountInRoute {
+        pool_id: find_field(&fields, 1)
+            .map(|v| v.as_varint())
+            .transpose()?
+            .unwrap_or(0),
+        token_out_denom: find_field(&fields, 2)
+            .map(|v| v.as_string())
+            .transpose()?
+            .unwrap_or_default(),
+    })
+}
+
+/// `osmosis.poolmanager.v1beta1.SwapAmountInSplitRoute`.
+fn decode_split_leg(bytes: &[u8]) -> Result<SwapAmountInSplitRoute> {
+    let fields = decode_fields(bytes)?;
+    refuse_repeated(&fields, &[2])?;
+    let mut pools = Vec::new();
+    for hop in find_all(&fields, 1) {
+        pools.push(decode_hop(hop.as_bytes()?)?);
+    }
+    Ok(SwapAmountInSplitRoute {
+        pools,
+        token_in_amount: find_field(&fields, 2)
+            .map(|v| v.as_string())
+            .transpose()?
+            .unwrap_or_default(),
+    })
 }
 
 fn decode_coin(bytes: &[u8]) -> Result<Coin> {
@@ -709,6 +864,27 @@ mod tests {
                 contract: TO.to_owned(),
                 msg: br#"{"swap":{"offer":"100"}}"#.to_vec(),
                 funds: vec![Coin::new("uatom", "100").unwrap()],
+            },
+            Msg::SwapExactAmountIn {
+                sender: OSMO.to_owned(),
+                routes: vec![hop(1, ATOM), hop(3586, OUT)],
+                token_in: Coin::new("uosmo", "10000000").unwrap(),
+                token_out_min_amount: "340000".to_owned(),
+            },
+            Msg::SplitRouteSwapExactAmountIn {
+                sender: OSMO.to_owned(),
+                routes: vec![
+                    SwapAmountInSplitRoute {
+                        pools: vec![hop(3498, OUT)],
+                        token_in_amount: "5970000".to_owned(),
+                    },
+                    SwapAmountInSplitRoute {
+                        pools: vec![hop(3586, OUT)],
+                        token_in_amount: "3980000".to_owned(),
+                    },
+                ],
+                token_in_denom: "uosmo".to_owned(),
+                token_out_min_amount: "350000".to_owned(),
             },
         ];
 
@@ -1038,6 +1214,344 @@ mod tests {
             decode_direct_sign_doc(empty_body.as_bytes()).unwrap_err(),
             CosmosError::SignDoc
         );
+    }
+
+    const OSMO: &str = "osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8";
+    const ATOM: &str = "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
+    const OUT: &str = "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
+    const SWAP: &str = "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn";
+    const SPLIT: &str = "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn";
+
+    fn hop(pool_id: u64, token_out_denom: &str) -> SwapAmountInRoute {
+        SwapAmountInRoute {
+            pool_id,
+            token_out_denom: token_out_denom.to_owned(),
+        }
+    }
+
+    fn hop_bytes(pool_id: u64, token_out_denom: &str) -> Vec<u8> {
+        let mut writer = ProtoWriter::new();
+        writer.uint64(1, pool_id).string(2, token_out_denom);
+        writer.into_bytes()
+    }
+
+    fn coin_bytes(denom: &str, amount: &str) -> Vec<u8> {
+        let mut writer = ProtoWriter::new();
+        writer.string(1, denom).string(2, amount);
+        writer.into_bytes()
+    }
+
+    /// A `MsgSwapExactAmountIn` assembled by hand, so a test can break it in ways no encoder
+    /// would: a missing coin, a minimum written twice.
+    fn swap_bytes(hops: &[Vec<u8>], token_in: Option<Vec<u8>>, minimums: &[&str]) -> Vec<u8> {
+        let mut writer = ProtoWriter::new();
+        writer.string(1, OSMO).repeated_message(2, hops);
+        if let Some(coin) = token_in {
+            writer.message_always(3, &coin);
+        }
+        for minimum in minimums {
+            writer.string(4, minimum);
+        }
+        writer.into_bytes()
+    }
+
+    fn split_leg_bytes(hops: &[Vec<u8>], amounts: &[&str]) -> Vec<u8> {
+        let mut writer = ProtoWriter::new();
+        writer.repeated_message(1, hops);
+        for amount in amounts {
+            writer.string(2, amount);
+        }
+        writer.into_bytes()
+    }
+
+    fn split_bytes(legs: &[Vec<u8>], minimum: &str) -> Vec<u8> {
+        let mut writer = ProtoWriter::new();
+        writer
+            .string(1, OSMO)
+            .repeated_message(2, legs)
+            .string(3, "uosmo")
+            .string(4, minimum);
+        writer.into_bytes()
+    }
+
+    fn decode_one(type_url: &str, value: &[u8]) -> DecodedMsg {
+        let decoded =
+            decode_direct_sign_doc(&hand_built_doc(vec![any_of(type_url, value)])).unwrap();
+        assert_eq!(decoded.has_unknown_msgs, decoded.msgs[0].is_unknown());
+        decoded.msgs[0].clone()
+    }
+
+    #[test]
+    fn a_dapp_swap_decodes_into_a_named_swap() {
+        // How the Osmosis app's swap reaches the wallet: SIGN_MODE_DIRECT bytes, built by
+        // someone else. The golden vectors cover osmojs's own bytes; this pins the fields.
+        let decoded = decode_one(
+            SWAP,
+            &swap_bytes(
+                &[hop_bytes(3586, OUT)],
+                Some(coin_bytes("uosmo", "9950000")),
+                &["350000"],
+            ),
+        );
+        assert_eq!(
+            decoded,
+            DecodedMsg::SwapExactAmountIn {
+                sender: OSMO.to_owned(),
+                routes: vec![hop(3586, OUT)],
+                token_in: Some(Coin::new("uosmo", "9950000").unwrap()),
+                token_out_min_amount: "350000".to_owned(),
+            }
+        );
+        assert_eq!(
+            decoded.summary(),
+            format!("Swap 9950000 uosmo for at least 350000 {OUT} through pool 3586")
+        );
+        assert_eq!(decoded.addresses(), vec![OSMO]);
+
+        let decoded = decode_one(
+            SPLIT,
+            &split_bytes(
+                &[
+                    split_leg_bytes(&[hop_bytes(3498, OUT)], &["5970000"]),
+                    split_leg_bytes(&[hop_bytes(3586, OUT)], &["3980000"]),
+                ],
+                "350000",
+            ),
+        );
+        assert!(!decoded.is_unknown(), "got {decoded:?}");
+        assert_eq!(
+            decoded.summary(),
+            format!(
+                "Swap 9950000 uosmo for at least 350000 {OUT} through 2 routes (pools 3498; 3586)"
+            )
+        );
+    }
+
+    #[test]
+    fn a_swap_whose_minimum_is_written_twice_is_not_treated_as_understood() {
+        // The chain keeps the last value of a repeated singular field and this decoder would
+        // otherwise read the first, so the prompt could promise a floor of 350000 for a swap
+        // that executes with a floor of 1.
+        let decoded = decode_one(
+            SWAP,
+            &swap_bytes(
+                &[hop_bytes(3586, OUT)],
+                Some(coin_bytes("uosmo", "9950000")),
+                &["350000", "1"],
+            ),
+        );
+        assert!(decoded.is_unknown(), "got {decoded:?}");
+
+        let decoded = decode_one(SPLIT, &{
+            let mut writer = ProtoWriter::new();
+            writer
+                .string(1, OSMO)
+                .repeated_message(2, &[split_leg_bytes(&[hop_bytes(3586, OUT)], &["9950000"])])
+                .string(3, "uosmo")
+                .string(4, "350000")
+                .string(4, "1");
+            writer.into_bytes()
+        });
+        assert!(decoded.is_unknown(), "got {decoded:?}");
+    }
+
+    #[test]
+    fn any_repeated_singular_field_in_a_swap_is_refused() {
+        // Every level: the message, the coin, a hop, a split leg.
+        let doubled_sender = {
+            let mut writer = ProtoWriter::new();
+            writer
+                .string(1, OSMO)
+                .string(1, "osmo1jrkmdcwgq94uaamx6zax2luewlhf7u4kufy8q2")
+                .repeated_message(2, &[hop_bytes(3586, OUT)])
+                .message_always(3, &coin_bytes("uosmo", "9950000"))
+                .string(4, "350000");
+            writer.into_bytes()
+        };
+        let doubled_coin = swap_bytes(
+            &[hop_bytes(3586, OUT)],
+            Some({
+                let mut writer = ProtoWriter::new();
+                writer
+                    .string(1, "uosmo")
+                    .string(2, "1")
+                    .string(2, "9950000");
+                writer.into_bytes()
+            }),
+            &["350000"],
+        );
+        let doubled_pool = swap_bytes(
+            &[{
+                let mut writer = ProtoWriter::new();
+                writer.uint64(1, 3586).uint64(1, 3498).string(2, OUT);
+                writer.into_bytes()
+            }],
+            Some(coin_bytes("uosmo", "9950000")),
+            &["350000"],
+        );
+        let doubled_token_in = {
+            let mut writer = ProtoWriter::new();
+            writer
+                .string(1, OSMO)
+                .repeated_message(2, &[hop_bytes(3586, OUT)])
+                .message_always(3, &coin_bytes("uosmo", "1"))
+                .message_always(3, &coin_bytes("uosmo", "9950000"))
+                .string(4, "350000");
+            writer.into_bytes()
+        };
+        for (label, bytes) in [
+            ("sender", doubled_sender),
+            ("coin amount", doubled_coin),
+            ("pool id", doubled_pool),
+            ("token_in", doubled_token_in),
+        ] {
+            assert!(
+                decode_one(SWAP, &bytes).is_unknown(),
+                "a repeated {label} was presented as understood"
+            );
+        }
+
+        let doubled_leg_amount = split_bytes(
+            &[split_leg_bytes(&[hop_bytes(3586, OUT)], &["1", "9950000"])],
+            "350000",
+        );
+        assert!(decode_one(SPLIT, &doubled_leg_amount).is_unknown());
+    }
+
+    #[test]
+    fn a_swap_with_no_floor_is_not_treated_as_understood() {
+        // "for at least 0" reads like a number and means "at any price". The chain refuses it
+        // as well, but a prompt that describes it confidently is still describing a blank cheque.
+        for minimums in [&["0"][..], &[][..]] {
+            let decoded = decode_one(
+                SWAP,
+                &swap_bytes(
+                    &[hop_bytes(3586, OUT)],
+                    Some(coin_bytes("uosmo", "9950000")),
+                    minimums,
+                ),
+            );
+            assert!(decoded.is_unknown(), "{minimums:?}: got {decoded:?}");
+            assert!(decoded.summary().contains("UNKNOWN ACTION"));
+        }
+        let decoded = decode_one(
+            SPLIT,
+            &split_bytes(
+                &[split_leg_bytes(&[hop_bytes(3586, OUT)], &["9950000"])],
+                "0",
+            ),
+        );
+        assert!(decoded.is_unknown(), "got {decoded:?}");
+    }
+
+    #[test]
+    fn a_swap_the_chain_could_not_execute_is_not_treated_as_understood() {
+        let coin = || Some(coin_bytes("uosmo", "9950000"));
+        let too_long: Vec<Vec<u8>> = (1..=crate::msg::MAX_SWAP_HOPS as u64 + 1)
+            .map(|id| hop_bytes(id, OUT))
+            .collect();
+        let pool_id_as_bytes = {
+            let mut writer = ProtoWriter::new();
+            writer.bytes(1, &[0x82, 0x1c]).string(2, OUT);
+            writer.into_bytes()
+        };
+        let singles: Vec<(&str, Vec<u8>)> = vec![
+            ("no route", swap_bytes(&[], coin(), &["350000"])),
+            (
+                "pool 0",
+                swap_bytes(&[hop_bytes(0, OUT)], coin(), &["350000"]),
+            ),
+            (
+                "an empty denom",
+                swap_bytes(&[hop_bytes(3586, "")], coin(), &["350000"]),
+            ),
+            (
+                "a control character in a denom",
+                swap_bytes(&[hop_bytes(3586, "ibc/794C\u{0}")], coin(), &["350000"]),
+            ),
+            (
+                "no token_in",
+                swap_bytes(&[hop_bytes(3586, OUT)], None, &["350000"]),
+            ),
+            (
+                "a zero token_in",
+                swap_bytes(
+                    &[hop_bytes(3586, OUT)],
+                    Some(coin_bytes("uosmo", "0")),
+                    &["350000"],
+                ),
+            ),
+            (
+                "a token_in with no amount",
+                swap_bytes(
+                    &[hop_bytes(3586, OUT)],
+                    Some({
+                        let mut writer = ProtoWriter::new();
+                        writer.string(1, "uosmo");
+                        writer.into_bytes()
+                    }),
+                    &["350000"],
+                ),
+            ),
+            (
+                "a non-canonical minimum",
+                swap_bytes(&[hop_bytes(3586, OUT)], coin(), &["0350000"]),
+            ),
+            (
+                "a route over the cap",
+                swap_bytes(&too_long, coin(), &["350000"]),
+            ),
+            (
+                "a pool id with the wrong wire type",
+                swap_bytes(&[pool_id_as_bytes], coin(), &["350000"]),
+            ),
+        ];
+        for (label, bytes) in singles {
+            assert!(
+                decode_one(SWAP, &bytes).is_unknown(),
+                "a swap with {label} was presented as understood"
+            );
+        }
+
+        let splits: Vec<(&str, Vec<Vec<u8>>)> = vec![
+            ("no legs", vec![]),
+            ("a leg with no pools", vec![split_leg_bytes(&[], &["1"])]),
+            (
+                "a leg that spends nothing",
+                vec![split_leg_bytes(&[hop_bytes(3586, OUT)], &["0"])],
+            ),
+            (
+                "legs ending in different denoms",
+                vec![
+                    split_leg_bytes(&[hop_bytes(3498, OUT)], &["6000000"]),
+                    split_leg_bytes(&[hop_bytes(1, ATOM)], &["4000000"]),
+                ],
+            ),
+            (
+                "the same legs twice",
+                vec![
+                    split_leg_bytes(&[hop_bytes(3498, OUT)], &["6000000"]),
+                    split_leg_bytes(&[hop_bytes(3498, OUT)], &["4000000"]),
+                ],
+            ),
+        ];
+        for (label, legs) in splits {
+            assert!(
+                decode_one(SPLIT, &split_bytes(&legs, "350000")).is_unknown(),
+                "a split swap with {label} was presented as understood"
+            );
+        }
+    }
+
+    #[test]
+    fn a_swap_from_a_sender_that_is_not_bech32_is_not_treated_as_understood() {
+        let mut writer = ProtoWriter::new();
+        writer
+            .string(1, "osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df9")
+            .repeated_message(2, &[hop_bytes(3586, OUT)])
+            .message_always(3, &coin_bytes("uosmo", "9950000"))
+            .string(4, "350000");
+        assert!(decode_one(SWAP, writer.as_bytes()).is_unknown());
     }
 
     #[test]

@@ -10,7 +10,8 @@
 //! # The Cosmos surface
 //!
 //! [`build_sign_bytes`], [`assemble_tx_raw`], [`build_simulate_tx`], [`sign_tx`] and
-//! [`preview_tx`] cover the whole message set rather than one hardcoded transfer. Messages
+//! [`preview_tx`] cover the whole message set rather than one hardcoded transfer: bank,
+//! staking, distribution, governance, IBC, CosmWasm, and Osmosis's poolmanager swaps. Messages
 //! arrive as the `[{ typeUrl, value }]` proto-JSON that `@zunialab/interchain` already emits,
 //! are parsed by `zunia_cosmos::json`, and are encoded by the golden-vector-tested encoders in
 //! `zunia_cosmos`. Nothing about the wire format is decided in this file: a bug here has to
@@ -225,8 +226,8 @@ pub fn decode_direct_tx(sign_doc_hex: &str) -> Result<JsValue, JsValue> {
 /// Superseded by [`build_sign_bytes`], which takes the whole message set and both sign modes.
 /// Kept because callers still reference it; new code should build a
 /// `[{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: { … } }]` payload and go through the
-/// general path, which is the only one that can express staking, governance, IBC and contract
-/// calls.
+/// general path, which is the only one that can express staking, governance, IBC, contract
+/// calls and Osmosis swaps.
 #[wasm_bindgen]
 pub fn build_bank_send_direct(
     chain_id: &str,
@@ -1189,6 +1190,33 @@ mod tests {
         "stakeCurrency": { "coinDenom": "ATOM", "coinMinimalDenom": "uatom", "coinDecimals": 6 }
     }"#;
 
+    /// Osmosis: the same coin type, so the vector key derives the vectors' `osmo` address.
+    const OSMOSIS: &str = r#"{
+        "chainId": "osmosis-1",
+        "chainName": "Osmosis",
+        "rpc": "https://rpc.osmosis.example",
+        "rest": "https://lcd.osmosis.example",
+        "bip44": { "coinType": 118 },
+        "bech32Config": {
+            "bech32PrefixAccAddr": "osmo",
+            "bech32PrefixValAddr": "osmovaloper",
+            "bech32PrefixConsAddr": "osmovalcons"
+        },
+        "currencies": [{ "coinDenom": "OSMO", "coinMinimalDenom": "uosmo", "coinDecimals": 6 }],
+        "feeCurrencies": [{ "coinDenom": "OSMO", "coinMinimalDenom": "uosmo", "coinDecimals": 6 }],
+        "stakeCurrency": { "coinDenom": "OSMO", "coinMinimalDenom": "uosmo", "coinDecimals": 6 }
+    }"#;
+
+    /// The fee the extension attaches to an Osmosis swap.
+    const OSMOSIS_FEE: &str =
+        r#"{"amount":[{"denom":"uosmo","amount":"5000"}],"gas_limit":"300000"}"#;
+
+    /// ATOM over IBC on Osmosis, and the token both of the vector swap pools hold.
+    const ATOM_ON_OSMOSIS: &str =
+        "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
+    const SWAP_OUT_DENOM: &str =
+        "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
+
     fn vectors_path() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/vectors/cosmos-signing.json")
     }
@@ -1220,6 +1248,7 @@ mod tests {
         let from = str_at(addresses, &["cosmos"]);
         let valoper = str_at(addresses, &["cosmosvaloper"]);
         let safro = str_at(addresses, &["addr_safro"]);
+        let osmo = str_at(addresses, &["osmo"]);
 
         match name {
             "msg_send" => json!({
@@ -1286,6 +1315,39 @@ mod tests {
                 "contract": TO,
                 "msg": "eyJzd2FwIjp7Im9mZmVyIjoiMTAwIn19",
                 "funds": [{ "denom": "uatom", "amount": "100" }],
+            }),
+            // The swaps as the extension sends them. Pool ids are strings in the first two and
+            // JSON numbers in the split, since clients emit both; osmojs's bytes prove that both
+            // land on the same encoding.
+            "msg_swap_exact_amount_in" => json!({
+                "sender": osmo,
+                "routes": [{ "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM }],
+                "token_in": { "denom": "uosmo", "amount": "9950000" },
+                "token_out_min_amount": "350000",
+            }),
+            "msg_swap_exact_amount_in_multi_hop" => json!({
+                "sender": osmo,
+                "routes": [
+                    { "pool_id": "1", "token_out_denom": ATOM_ON_OSMOSIS },
+                    { "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM },
+                ],
+                "token_in": { "denom": "uosmo", "amount": "10000000" },
+                "token_out_min_amount": "340000",
+            }),
+            "msg_split_route_swap_exact_amount_in" => json!({
+                "sender": osmo,
+                "routes": [
+                    {
+                        "pools": [{ "pool_id": 3498, "token_out_denom": SWAP_OUT_DENOM }],
+                        "token_in_amount": "6000000",
+                    },
+                    {
+                        "pools": [{ "pool_id": 3586, "token_out_denom": SWAP_OUT_DENOM }],
+                        "token_in_amount": "4000000",
+                    },
+                ],
+                "token_in_denom": "uosmo",
+                "token_out_min_amount": "350000",
             }),
             other => panic!(
                 "vector \"{other}\" has no proto-JSON counterpart; add it to value_for or \
@@ -1394,7 +1456,7 @@ mod tests {
         }
 
         assert!(
-            checked >= 9,
+            checked >= 12,
             "expected the whole vector set minus {NO_TIMEOUT}, checked {checked}"
         );
     }
@@ -1661,6 +1723,193 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("proposal 848"));
+    }
+
+    /// The two swaps the extension's swap screen sends, for the vector key's osmo address.
+    fn extension_swaps(vectors: &Value) -> (String, String) {
+        let osmo = str_at(vectors, &["key", "addresses", "osmo"]);
+        let single = json!([{
+            "typeUrl": "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn",
+            "value": {
+                "sender": osmo,
+                "routes": [{ "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM }],
+                "token_in": { "denom": "uosmo", "amount": "9950000" },
+                "token_out_min_amount": "350000",
+            },
+        }]);
+        let split = json!([{
+            "typeUrl": "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn",
+            "value": {
+                "sender": osmo,
+                "routes": [
+                    {
+                        "pools": [{ "pool_id": "3498", "token_out_denom": SWAP_OUT_DENOM }],
+                        "token_in_amount": "5970000",
+                    },
+                    {
+                        "pools": [{ "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM }],
+                        "token_in_amount": "3980000",
+                    },
+                ],
+                "token_in_denom": "uosmo",
+                "token_out_min_amount": "350000",
+            },
+        }]);
+        (single.to_string(), split.to_string())
+    }
+
+    #[test]
+    fn preview_of_an_osmosis_swap_names_the_floor_and_spends_funds() {
+        let vectors = load();
+        let signer = signer_from(&vectors);
+        let osmo = str_at(&vectors, &["key", "addresses", "osmo"]);
+        let (single, split) = extension_swaps(&vectors);
+
+        for (msgs, summary) in [
+            (
+                single,
+                format!(
+                    "Swap 9950000 uosmo for at least 350000 {SWAP_OUT_DENOM} through pool 3586"
+                ),
+            ),
+            (
+                split,
+                format!(
+                    "Swap 9950000 uosmo for at least 350000 {SWAP_OUT_DENOM} through 2 routes \
+                     (pools 3498; 3586)"
+                ),
+            ),
+        ] {
+            let rendered = preview_json(
+                "osmosis-1",
+                &msgs,
+                OSMOSIS_FEE,
+                "",
+                1,
+                0,
+                &signer.public_key_hex,
+                false,
+                "direct",
+            )
+            .unwrap();
+            let preview: Value = serde_json::from_str(&rendered).unwrap();
+            assert_eq!(preview["chainId"], json!("osmosis-1"));
+            assert_eq!(preview["gasLimit"], json!("300000"));
+            assert_eq!(preview["summaries"], json!([summary]));
+            assert_eq!(preview["messages"][0]["summary"], json!(summary));
+            assert_eq!(preview["spendsFunds"], json!(true));
+            assert_eq!(preview["messages"][0]["spendsFunds"], json!(true));
+            assert_eq!(preview["counterparties"], json!([osmo]));
+        }
+    }
+
+    #[test]
+    fn sign_tx_signs_an_osmosis_swap_for_osmosis_and_only_for_osmosis() {
+        // End to end through the derive-sign-assemble path with an Osmosis chain document. The
+        // signature is RFC 6979 deterministic, so it must equal a signature over exactly the
+        // bytes build_sign_bytes returns for the same request.
+        let vectors = load();
+        let phrase = str_at(&vectors, &["key", "mnemonic"]);
+        let signer = signer_from(&vectors);
+        let (single, split) = extension_swaps(&vectors);
+
+        for msgs in [&single, &split] {
+            for mode in ["direct", "amino"] {
+                let raw = signed_tx_hex(
+                    &phrase,
+                    "",
+                    OSMOSIS,
+                    0,
+                    "osmosis-1",
+                    msgs,
+                    OSMOSIS_FEE,
+                    "",
+                    1,
+                    0,
+                    mode,
+                )
+                .unwrap();
+                let sign_bytes = sign_bytes_hex(
+                    "osmosis-1",
+                    msgs,
+                    OSMOSIS_FEE,
+                    "",
+                    1,
+                    0,
+                    &signer.public_key_hex,
+                    false,
+                    mode,
+                )
+                .unwrap();
+                let (_, _, signature) = tx_raw_parts(&raw);
+                let digest: [u8; 32] = Sha256::digest(hex::decode(&sign_bytes).unwrap()).into();
+                assert!(
+                    zunia_kernel::verify_digest_secp256k1(
+                        &hex::decode(&signer.public_key_hex).unwrap(),
+                        &digest,
+                        &signature,
+                    )
+                    .unwrap(),
+                    "{mode}: the swap's signature does not cover the bytes build_sign_bytes returns"
+                );
+            }
+
+            // The same swap against the Cosmos Hub's document: the osmo sender is refused before
+            // a key is derived.
+            assert_eq!(
+                signed_tx_hex(
+                    &phrase,
+                    "",
+                    COSMOS_HUB,
+                    0,
+                    &signer.chain_id,
+                    msgs,
+                    FEE,
+                    "",
+                    signer.account_number,
+                    signer.sequence,
+                    "direct",
+                )
+                .unwrap_err(),
+                BindingError::Cosmos(CosmosError::Address)
+            );
+        }
+    }
+
+    #[test]
+    fn a_swap_with_no_floor_is_refused_with_a_reason() {
+        let vectors = load();
+        let signer = signer_from(&vectors);
+        let (single, split) = extension_swaps(&vectors);
+
+        for msgs in [single, split] {
+            let no_floor = msgs.replace(
+                r#""token_out_min_amount":"350000""#,
+                r#""token_out_min_amount":"0""#,
+            );
+            assert_ne!(no_floor, msgs, "the fixture must actually change");
+            let refused = sign_bytes_hex(
+                "osmosis-1",
+                &no_floor,
+                OSMOSIS_FEE,
+                "",
+                1,
+                0,
+                &signer.public_key_hex,
+                false,
+                "direct",
+            )
+            .unwrap_err();
+            assert!(matches!(
+                refused,
+                BindingError::Cosmos(CosmosError::Swap(_))
+            ));
+            // What the extension's error handler shows: the field and why.
+            assert_eq!(
+                refused.to_string(),
+                "swap refused: token_out_min_amount is zero, so the swap would fill at any price"
+            );
+        }
     }
 
     #[test]

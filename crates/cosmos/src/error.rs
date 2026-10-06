@@ -21,6 +21,13 @@ pub enum CosmosError {
     SignDoc,
     /// A gas limit or fee was missing or nonsensical.
     Fee,
+    /// A swap was refused before signing, for the reason given.
+    ///
+    /// Covers what a swap's amounts and denoms cannot say on their own: no route, a pool that
+    /// cannot exist, a route longer than the wallet will sign, split legs that disagree, and
+    /// above all no minimum output. The reason names the field at fault, because "sign document
+    /// is invalid" sends an integrator looking at the wrong half of the payload.
+    Swap(&'static str),
     /// The kernel rejected a key or signing operation.
     Kernel(zunia_kernel::KernelError),
 }
@@ -36,6 +43,7 @@ impl core::fmt::Display for CosmosError {
             Self::UnknownMessage(url) => write!(f, "cannot decode message type {url}"),
             Self::SignDoc => f.write_str("sign document is invalid"),
             Self::Fee => f.write_str("fee or gas limit is invalid"),
+            Self::Swap(reason) => write!(f, "swap refused: {reason}"),
             Self::Kernel(inner) => write!(f, "kernel: {inner}"),
         }
     }

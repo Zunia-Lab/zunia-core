@@ -8,6 +8,12 @@
  * nothing, which surfaces on chain as an opaque "unauthorized" rather than as an error the
  * user can act on.
  *
+ * The Osmosis poolmanager swaps are not in cosmjs-types, so their messages come from osmojs
+ * instead: its telescope-generated encoder for the protobuf, and its Amino converter for the
+ * Amino document, which is what the Osmosis app signs with. Nothing about those two messages is
+ * written by hand here, so the type URL, the Amino name, the field numbers and the Amino shape
+ * the Rust side is asserted against are osmojs's. CosmJS still assembles both sign documents.
+ *
  * Regenerate after any change to the message set or to a proto version pin:
  *
  *   cd tests/vectors/generate && pnpm install && pnpm generate
@@ -17,6 +23,7 @@
  */
 
 import { writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,7 +47,14 @@ import { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx.js';
 import { PubKey } from 'cosmjs-types/cosmos/crypto/secp256k1/keys.js';
 import { Any } from 'cosmjs-types/google/protobuf/any.js';
 
+import {
+  MsgSwapExactAmountIn,
+  MsgSplitRouteSwapExactAmountIn,
+} from 'osmojs/osmosis/poolmanager/v1beta1/tx.js';
+import { AminoConverter as PoolmanagerAmino } from 'osmojs/osmosis/poolmanager/v1beta1/tx.amino.js';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
+const OSMOJS_VERSION = createRequire(import.meta.url)('osmojs/package.json').version;
 
 // The all-abandon BIP-39 test mnemonic. Public, worthless, and the standard vector input.
 const MNEMONIC = `${'abandon '.repeat(11)}about`;
@@ -64,6 +78,31 @@ const SAFRO = toBech32('addr_safro', accountBytes, 200);
 
 const FEE_AMOUNT = [{ denom: 'uatom', amount: '5000' }];
 const GAS_LIMIT = 200000;
+
+// Osmosis mainnet data, read from the chain and from its router (sqs.osmosis.zone) on
+// 2026-10-06. Pool 3498 is a concentrated-liquidity pool and pool 3586 a balancer pool, both
+// holding OSMO and the IBC token below; the router splits 9.95 OSMO 60/40 across them, the
+// shape pinned here at 10 OSMO. Pool 1 is OSMO/ATOM, and 3586 holds ATOM too, which makes the
+// two-hop route a real one. The sender is the test key's own osmo address.
+const OSMO_SENDER = toBech32('osmo', accountBytes, 200);
+const ATOM_ON_OSMOSIS = 'ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2';
+const SWAP_OUT_DENOM = 'ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138';
+
+/**
+ * A case built entirely by osmojs: the message through its `fromPartial` and `encode`, the Amino
+ * `{type, value}` through the converter a CosmJS client registers for that type URL.
+ */
+function osmosisCase(name, Msg, value) {
+  const message = Msg.fromPartial(value);
+  const converter = PoolmanagerAmino[Msg.typeUrl];
+  return {
+    name,
+    typeUrl: Msg.typeUrl,
+    proto: Msg.encode(message).finish(),
+    amino: { type: converter.aminoType, value: converter.toAmino(message) },
+    memo: '',
+  };
+}
 
 /** Each case supplies the protobuf `Any` and the equivalent Amino `{type, value}`. */
 const cases = [
@@ -259,6 +298,31 @@ const cases = [
     },
     memo: '',
   },
+  osmosisCase('msg_swap_exact_amount_in', MsgSwapExactAmountIn, {
+    sender: OSMO_SENDER,
+    routes: [{ poolId: 3586n, tokenOutDenom: SWAP_OUT_DENOM }],
+    tokenIn: { denom: 'uosmo', amount: '9950000' },
+    tokenOutMinAmount: '350000',
+  }),
+  osmosisCase('msg_swap_exact_amount_in_multi_hop', MsgSwapExactAmountIn, {
+    sender: OSMO_SENDER,
+    // OSMO to ATOM through pool 1, then ATOM to the target through pool 3586.
+    routes: [
+      { poolId: 1n, tokenOutDenom: ATOM_ON_OSMOSIS },
+      { poolId: 3586n, tokenOutDenom: SWAP_OUT_DENOM },
+    ],
+    tokenIn: { denom: 'uosmo', amount: '10000000' },
+    tokenOutMinAmount: '340000',
+  }),
+  osmosisCase('msg_split_route_swap_exact_amount_in', MsgSplitRouteSwapExactAmountIn, {
+    sender: OSMO_SENDER,
+    routes: [
+      { pools: [{ poolId: 3498n, tokenOutDenom: SWAP_OUT_DENOM }], tokenInAmount: '6000000' },
+      { pools: [{ poolId: 3586n, tokenOutDenom: SWAP_OUT_DENOM }], tokenInAmount: '4000000' },
+    ],
+    tokenInDenom: 'uosmo',
+    tokenOutMinAmount: '350000',
+  }),
 ];
 
 const pubkeyAny = Any.fromPartial({
@@ -341,7 +405,10 @@ const output = {
     'A byte change here means the reference encoding changed and needs review.',
   generated_with: {
     cosmjs: '0.33',
-    note: 'ADR-0004 pins CosmJS as the reference for Cosmos encoding.',
+    osmojs: OSMOJS_VERSION,
+    note:
+      'ADR-0004 pins CosmJS as the reference for Cosmos encoding. The Osmosis poolmanager ' +
+      'messages are encoded, and their Amino documents converted, by osmojs.',
   },
   key: {
     mnemonic: MNEMONIC,

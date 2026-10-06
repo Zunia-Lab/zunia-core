@@ -168,7 +168,7 @@ export const validateBech32Address = (address, expectedPrefix) =>
   raw.validate_bech32_address(address, expectedPrefix);
 export const parseChain = (chainJson) => toPlain(raw.parse_chain(chainJson));
 
-/** @deprecated Superseded by {@link buildSignBytes}, which covers all eight message types. */
+/** @deprecated Superseded by {@link buildSignBytes}, which covers all ten message types. */
 export const buildBankSendDirect = (
   chainId, from, to, amount, denom, memo,
   accountNumber, sequence, feeAmount, feeDenom, gasLimit, publicKeyHex, ethKeyType,
@@ -360,7 +360,7 @@ export function parseChain(chainJson: string): unknown;
 /**
  * @deprecated Only expresses a bank send. Use {@link buildSignBytes} with a
  * `[{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: {...} }]` payload, which is the only
- * path that can also express staking, governance, IBC and contract calls.
+ * path that can also express staking, governance, IBC, contract calls and Osmosis swaps.
  */
 export function buildBankSendDirect(
   chainId: string,
@@ -624,12 +624,47 @@ Note `/cosmwasm.wasm.v1.MsgExecuteContract`: `value.msg` is a **base64 string** 
 contract JSON, matching what `@zunialab/interchain` emits. The bridge decodes it on the way
 in and re-encodes it on the way out.
 
+Osmosis swaps use the poolmanager's own messages, so any pair Osmosis's router prices can be
+signed, previewed and simulated:
+
+```js
+const swap = {
+  typeUrl: "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn",
+  value: {
+    sender: "osmo1...",
+    routes: [{ pool_id: "3586", token_out_denom: "ibc/794C..." }],
+    token_in: { denom: "uosmo", amount: "9950000" },
+    token_out_min_amount: "350000",
+  },
+};
+const split = {
+  typeUrl: "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn",
+  value: {
+    sender: "osmo1...",
+    routes: [
+      { pools: [{ pool_id: "3498", token_out_denom: "ibc/794C..." }], token_in_amount: "5970000" },
+      { pools: [{ pool_id: "3586", token_out_denom: "ibc/794C..." }], token_in_amount: "3980000" },
+    ],
+    token_in_denom: "uosmo",
+    token_out_min_amount: "350000",
+  },
+};
+```
+
+`pool_id` may be a string or an integer and is always echoed as a string. A
+`token_out_min_amount` of `"0"` is refused: a swap without a floor can be filled at any price.
+So are an empty route, pool 0, more than 8 pools in a route or 16 legs in a split, split legs
+that end in different denoms or repeat the same pools, and any amount that is not a canonical
+integer. `previewTx` summarises a swap as
+`Swap 9950000 uosmo for at least 350000 ibc/794C... through pool 3586`.
+
 `signTx` is the one-shot convenience path (derive → sign bytes → sign → assemble) and is the
 only entry point that holds a chain document, so it also refuses a chain-id mismatch and
 addresses carrying another chain's bech32 prefix.
 
-Byte-for-byte equality with CosmJS is enforced by `tests/vectors/cosmos-signing.json` in the
-Rust workspace and re-checked against this built artifact by `scripts/smoke-npm.mjs`.
+Byte-for-byte equality with CosmJS, and with osmojs for the Osmosis swaps, is enforced by
+`tests/vectors/cosmos-signing.json` in the Rust workspace and re-checked against this built
+artifact by `scripts/smoke-npm.mjs`.
 
 See [ADR-0002](https://github.com/Zunia-Lab/zunia-core/blob/main/docs/adr/0002-wallet-kernel-language.md)
 and [ADR-0005](https://github.com/Zunia-Lab/zunia-core/blob/main/docs/adr/0005-polyrepo-package-flow.md).

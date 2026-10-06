@@ -90,7 +90,30 @@ const COSMOS_HUB = JSON.stringify({
   stakeCurrency: { coinDenom: "ATOM", coinMinimalDenom: "uatom", coinDecimals: 6 },
 });
 
+/** Osmosis, for the swap signing round: same coin type, so the vector key owns `addresses.osmo`. */
+const OSMOSIS = JSON.stringify({
+  chainId: "osmosis-1",
+  chainName: "Osmosis",
+  rpc: "https://rpc.osmosis.example",
+  rest: "https://lcd.osmosis.example",
+  bip44: { coinType: 118 },
+  bech32Config: {
+    bech32PrefixAccAddr: "osmo",
+    bech32PrefixValAddr: "osmovaloper",
+    bech32PrefixConsAddr: "osmovalcons",
+  },
+  currencies: [{ coinDenom: "OSMO", coinMinimalDenom: "uosmo", coinDecimals: 6 }],
+  feeCurrencies: [{ coinDenom: "OSMO", coinMinimalDenom: "uosmo", coinDecimals: 6 }],
+  stakeCurrency: { coinDenom: "OSMO", coinMinimalDenom: "uosmo", coinDecimals: 6 },
+});
+const OSMOSIS_FEE = JSON.stringify({
+  amount: [{ denom: "uosmo", amount: "5000" }],
+  gas_limit: "300000",
+});
+
 const TO = "cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz";
+const ATOM_ON_OSMOSIS = "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
+const SWAP_OUT_DENOM = "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
 
 function messageFor(name, addresses) {
   const from = addresses.cosmos;
@@ -145,6 +168,44 @@ function messageFor(name, addresses) {
           funds: [{ denom: "uatom", amount: "100" }],
         },
       };
+    // Osmosis's native swaps, shaped as the extension sends them. The split carries its pool
+    // ids as numbers on purpose: callers emit both, and the osmojs bytes must come out either way.
+    case "msg_swap_exact_amount_in":
+      return {
+        typeUrl: "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn",
+        value: {
+          sender: addresses.osmo,
+          routes: [{ pool_id: "3586", token_out_denom: SWAP_OUT_DENOM }],
+          token_in: { denom: "uosmo", amount: "9950000" },
+          token_out_min_amount: "350000",
+        },
+      };
+    case "msg_swap_exact_amount_in_multi_hop":
+      return {
+        typeUrl: "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn",
+        value: {
+          sender: addresses.osmo,
+          routes: [
+            { pool_id: "1", token_out_denom: ATOM_ON_OSMOSIS },
+            { pool_id: "3586", token_out_denom: SWAP_OUT_DENOM },
+          ],
+          token_in: { denom: "uosmo", amount: "10000000" },
+          token_out_min_amount: "340000",
+        },
+      };
+    case "msg_split_route_swap_exact_amount_in":
+      return {
+        typeUrl: "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn",
+        value: {
+          sender: addresses.osmo,
+          routes: [
+            { pools: [{ pool_id: 3498, token_out_denom: SWAP_OUT_DENOM }], token_in_amount: "6000000" },
+            { pools: [{ pool_id: 3586, token_out_denom: SWAP_OUT_DENOM }], token_in_amount: "4000000" },
+          ],
+          token_in_denom: "uosmo",
+          token_out_min_amount: "350000",
+        },
+      };
     default:
       throw new Error(`no proto-JSON counterpart for vector "${name}"`);
   }
@@ -171,11 +232,22 @@ const caseNamed = (name) => {
 };
 
 console.log(`@zunialab/core resolved through its exports map, kernelVersion ${core.kernelVersion()}`);
-console.log(`vectors: ${path.relative(ROOT, VECTORS)} (CosmJS ${vectors.generated_with.cosmjs})\n`);
+console.log(
+  `vectors: ${path.relative(ROOT, VECTORS)} ` +
+    `(CosmJS ${vectors.generated_with.cosmjs}, osmojs ${vectors.generated_with.osmojs})\n`,
+);
 
-// 1. build_sign_bytes matches CosmJS, in both sign modes, for the three shapes the task names.
+// 1. build_sign_bytes matches CosmJS, in both sign modes, for the three shapes the task names,
+//    and matches osmojs for the three Osmosis swaps.
 console.log("build_sign_bytes vs golden vectors");
-for (const name of ["msg_send", "msg_transfer_with_timeout", "msg_execute_contract"]) {
+for (const name of [
+  "msg_send",
+  "msg_transfer_with_timeout",
+  "msg_execute_contract",
+  "msg_swap_exact_amount_in",
+  "msg_swap_exact_amount_in_multi_hop",
+  "msg_split_route_swap_exact_amount_in",
+]) {
   const vector = caseNamed(name);
   const msgs = JSON.stringify([messageFor(name, addresses)]);
   for (const mode of ["direct", "amino"]) {
@@ -222,6 +294,23 @@ console.log("\nrefusals survive the boundary");
     ) === "string",
   );
   if (threw) console.log(`       (message: "${threw.message}")`);
+
+  // A swap without a price floor is the other payload the kernel must never sign: whoever
+  // orders the block decides what it returns.
+  const swap = messageFor("msg_swap_exact_amount_in", addresses);
+  const noFloor = JSON.stringify([{ ...swap, value: { ...swap.value, token_out_min_amount: "0" } }]);
+  let refused = null;
+  try {
+    core.buildSignBytes("osmosis-1", noFloor, OSMOSIS_FEE, "", 1, 0, pubkey, false, "direct");
+  } catch (error) {
+    refused = error;
+  }
+  ok(
+    "a swap with token_out_min_amount 0 is refused, not signed",
+    refused instanceof Error && refused.message.includes("token_out_min_amount"),
+    refused ? `threw: ${refused.message}` : "returned sign bytes instead of throwing",
+  );
+  if (refused) console.log(`       (message: "${refused.message}")`);
 }
 
 // 3. assemble_tx_raw carries the golden body and auth_info. Checked by containment because the
@@ -271,6 +360,20 @@ console.log("\npreview_tx");
     preview.signBytesHash,
     createHash("sha256").update(Buffer.from(core.buildSignBytes(...args), "hex")).digest("hex"),
   );
+
+  // A split swap: the prompt must show the total spent, the floor, the output and the pools.
+  const split = core.previewTx(
+    "osmosis-1",
+    JSON.stringify([messageFor("msg_split_route_swap_exact_amount_in", addresses)]),
+    OSMOSIS_FEE, "", 1, 0, pubkey, false, "direct",
+  );
+  eq(
+    "split swap summary",
+    split.summaries[0],
+    `Swap 10000000 uosmo for at least 350000 ${SWAP_OUT_DENOM} through 2 routes (pools 3498; 3586)`,
+  );
+  eq("split swap spends funds", split.spendsFunds, true);
+  eq("split swap names only the sender", JSON.stringify(split.counterparties), JSON.stringify([addresses.osmo]));
 }
 
 // 5. The one-shot path, from the vector mnemonic. sign_tx must be exactly
@@ -309,6 +412,34 @@ console.log("\nsign_tx from the vector mnemonic");
       );
     }
   }
+}
+
+// 5b. The same one-shot path for an Osmosis swap, against an Osmosis chain document. No golden
+//     bytes exist for osmosis-1, so equality with the three-step path is what pins it, and the
+//     Cosmos Hub document must refuse the osmo sender outright.
+console.log("\nsign_tx for an Osmosis swap");
+for (const name of ["msg_swap_exact_amount_in", "msg_split_route_swap_exact_amount_in"]) {
+  const msgs = JSON.stringify([messageFor(name, addresses)]);
+  for (const mode of ["direct", "amino"]) {
+    const signBytes = core.buildSignBytes("osmosis-1", msgs, OSMOSIS_FEE, "", 1, 0, pubkey, false, mode);
+    const signature = core.signCosmos(mnemonic, "", OSMOSIS, 0, signBytes);
+    const expected = core.assembleTxRaw(
+      "osmosis-1", msgs, OSMOSIS_FEE, "", 1, 0, pubkey, false, mode, signature,
+    );
+    const actual = core.signTx(mnemonic, "", OSMOSIS, 0, "osmosis-1", msgs, OSMOSIS_FEE, "", 1, 0, mode);
+    eq(`${name} / ${mode}: sign_tx == derive+sign+assemble`, actual, expected);
+  }
+  let refused = null;
+  try {
+    core.signTx(mnemonic, "", COSMOS_HUB, 0, signer.chain_id, msgs, FEE, "", 1, 0, "direct");
+  } catch (error) {
+    refused = error;
+  }
+  ok(
+    `${name}: an osmo sender is refused on the Cosmos Hub`,
+    refused instanceof Error && refused.message.includes("address"),
+    refused ? `threw: ${refused.message}` : "signed instead of throwing",
+  );
 }
 
 // 6. Numbers, not just BigInts. account_number and sequence come off a REST response as JSON

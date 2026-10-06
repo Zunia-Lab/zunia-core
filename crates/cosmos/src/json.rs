@@ -29,6 +29,27 @@
 //! in and encodes on the way out. Getting the direction wrong makes every swap and every NFT
 //! transfer an invalid contract call that the chain rejects after the user has already signed.
 //!
+//! # Swaps
+//!
+//! The Osmosis poolmanager swaps arrive with snake_case keys like everything else here:
+//!
+//! ```json
+//! { "typeUrl": "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn",
+//!   "value": { "sender": "osmo1…",
+//!              "routes": [{ "pool_id": "3586", "token_out_denom": "ibc/794C…" }],
+//!              "token_in": { "denom": "uosmo", "amount": "9950000" },
+//!              "token_out_min_amount": "350000" } }
+//! ```
+//!
+//! `MsgSplitRouteSwapExactAmountIn` replaces `token_in` with `token_in_denom` and makes each
+//! entry of `routes` a leg, `{ "pools": [hop, …], "token_in_amount": "…" }`. A `pool_id` may be
+//! a decimal string or an integral JSON number and always leaves as a string, because it is a
+//! `uint64`. Every amount follows the coin rules above, and then the swap rules in
+//! [`crate::msg::validate_swap_exact_amount_in`] and
+//! [`crate::msg::validate_split_route_swap_exact_amount_in`] apply. The one most worth stating:
+//! a `token_out_min_amount` of zero is refused, because a swap with no floor is a blank cheque
+//! that whoever orders the block can fill at any price.
+//!
 //! # The one deliberate asymmetry
 //!
 //! [`msg_to_proto_json`] is a lossless inverse of [`msg_from_proto_json`] for every message a
@@ -44,7 +65,10 @@ use serde_json::{json, Map, Value};
 
 use crate::amount::Coin;
 use crate::error::{CosmosError, Result};
-use crate::msg::{Height, Msg, VoteOption};
+use crate::msg::{
+    validate_split_route_swap_exact_amount_in, validate_swap_exact_amount_in, Height, Msg,
+    SwapAmountInRoute, SwapAmountInSplitRoute, VoteOption,
+};
 use crate::tx::{Fee, SignMode};
 
 /// The largest number of messages this bridge accepts in one transaction.
@@ -127,6 +151,38 @@ pub fn msg_from_proto_json(type_url: &str, value: &Value) -> Result<Msg> {
             msg: contract_msg_from_json(field(value, "msg")?)?,
             funds: optional_coins_field(value, "funds")?,
         }),
+        "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn" => {
+            let sender = string_field(value, "sender")?;
+            let routes = swap_hops_from_json(field(value, "routes")?)?;
+            let token_in = coin_field(value, "token_in")?;
+            let token_out_min_amount = amount_from_json(field(value, "token_out_min_amount")?)?;
+            // Refused here, before anything is encoded: no route, pool 0, a route longer than
+            // the wallet signs, nothing spent, or no floor on what comes back.
+            validate_swap_exact_amount_in(&routes, &token_in, &token_out_min_amount)?;
+            Ok(Msg::SwapExactAmountIn {
+                sender,
+                routes,
+                token_in,
+                token_out_min_amount,
+            })
+        }
+        "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn" => {
+            let sender = string_field(value, "sender")?;
+            let routes = split_routes_from_json(field(value, "routes")?)?;
+            let token_in_denom = string_field(value, "token_in_denom")?;
+            let token_out_min_amount = amount_from_json(field(value, "token_out_min_amount")?)?;
+            validate_split_route_swap_exact_amount_in(
+                &routes,
+                &token_in_denom,
+                &token_out_min_amount,
+            )?;
+            Ok(Msg::SplitRouteSwapExactAmountIn {
+                sender,
+                routes,
+                token_in_denom,
+                token_out_min_amount,
+            })
+        }
         other => Err(CosmosError::UnknownMessage(other.to_owned())),
     }
 }
@@ -228,6 +284,34 @@ pub fn msg_to_proto_json(msg: &Msg) -> Value {
             // Base64 on the way out, decoded on the way in. See the module documentation.
             "msg": base64::engine::general_purpose::STANDARD.encode(msg),
             "funds": coins_to_json(funds),
+        }),
+        Msg::SwapExactAmountIn {
+            sender,
+            routes,
+            token_in,
+            token_out_min_amount,
+        } => json!({
+            "sender": sender,
+            "routes": hops_to_json(routes),
+            "token_in": coin_to_json(token_in),
+            "token_out_min_amount": token_out_min_amount,
+        }),
+        Msg::SplitRouteSwapExactAmountIn {
+            sender,
+            routes,
+            token_in_denom,
+            token_out_min_amount,
+        } => json!({
+            "sender": sender,
+            "routes": routes
+                .iter()
+                .map(|leg| json!({
+                    "pools": hops_to_json(&leg.pools),
+                    "token_in_amount": leg.token_in_amount,
+                }))
+                .collect::<Vec<_>>(),
+            "token_in_denom": token_in_denom,
+            "token_out_min_amount": token_out_min_amount,
         }),
     }
 }
@@ -483,6 +567,56 @@ fn decode_base64(text: &str) -> Result<Vec<u8>> {
         .map_err(|_| CosmosError::Decode)
 }
 
+/// Reads one route's hops, `[{ "pool_id": "3586", "token_out_denom": "ibc/…" }, …]`.
+///
+/// Only the shape is read here. Whether the route is one the wallet will sign, with no pool 0,
+/// valid denoms and at most [`crate::msg::MAX_SWAP_HOPS`] hops, is decided by the swap
+/// validators, so the bridge and the decoder cannot disagree about it.
+fn swap_hops_from_json(value: &Value) -> Result<Vec<SwapAmountInRoute>> {
+    value
+        .as_array()
+        .ok_or(CosmosError::Decode)?
+        .iter()
+        .map(|hop| {
+            Ok(SwapAmountInRoute {
+                // A string or an integral number. A float or a negative is refused, never
+                // rounded, by the same reader that guards proposal ids.
+                pool_id: u64_from_json(field(hop, "pool_id")?)?,
+                token_out_denom: string_field(hop, "token_out_denom")?,
+            })
+        })
+        .collect()
+}
+
+/// Reads a split swap's legs, `[{ "pools": [hop, …], "token_in_amount": "6000000" }, …]`.
+fn split_routes_from_json(value: &Value) -> Result<Vec<SwapAmountInSplitRoute>> {
+    value
+        .as_array()
+        .ok_or(CosmosError::Decode)?
+        .iter()
+        .map(|leg| {
+            Ok(SwapAmountInSplitRoute {
+                pools: swap_hops_from_json(field(leg, "pools")?)?,
+                token_in_amount: amount_from_json(field(leg, "token_in_amount")?)?,
+            })
+        })
+        .collect()
+}
+
+fn hops_to_json(hops: &[SwapAmountInRoute]) -> Value {
+    Value::Array(
+        hops.iter()
+            .map(|hop| {
+                json!({
+                    // Stringified like every other uint64 on this wire.
+                    "pool_id": hop.pool_id.to_string(),
+                    "token_out_denom": hop.token_out_denom,
+                })
+            })
+            .collect(),
+    )
+}
+
 fn coin_to_json(coin: &Coin) -> Value {
     json!({ "denom": coin.denom, "amount": coin.amount })
 }
@@ -517,6 +651,42 @@ mod tests {
             "contract": TO,
             "msg": base64::engine::general_purpose::STANDARD.encode(inner),
             "funds": funds,
+        })
+    }
+
+    const OSMO: &str = "osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8";
+    const ATOM: &str = "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
+    const OUT: &str = "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
+    const SWAP: &str = "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn";
+    const SPLIT: &str = "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn";
+
+    fn hop(pool_id: u64, token_out_denom: &str) -> SwapAmountInRoute {
+        SwapAmountInRoute {
+            pool_id,
+            token_out_denom: token_out_denom.to_owned(),
+        }
+    }
+
+    /// The single-route swap exactly as the extension sends it.
+    fn swap_json() -> Value {
+        json!({
+            "sender": OSMO,
+            "routes": [{ "pool_id": "3586", "token_out_denom": OUT }],
+            "token_in": { "denom": "uosmo", "amount": "9950000" },
+            "token_out_min_amount": "350000",
+        })
+    }
+
+    /// The split swap exactly as the extension sends it.
+    fn split_json() -> Value {
+        json!({
+            "sender": OSMO,
+            "routes": [
+                { "pools": [{ "pool_id": "3498", "token_out_denom": OUT }], "token_in_amount": "5970000" },
+                { "pools": [{ "pool_id": "3586", "token_out_denom": OUT }], "token_in_amount": "3980000" },
+            ],
+            "token_in_denom": "uosmo",
+            "token_out_min_amount": "350000",
         })
     }
 
@@ -586,6 +756,27 @@ mod tests {
                 msg: br#"{"swap":{"offer":"100"}}"#.to_vec(),
                 funds: vec![Coin::new("uatom", "100").unwrap()],
             },
+            Msg::SwapExactAmountIn {
+                sender: OSMO.to_owned(),
+                routes: vec![hop(1, ATOM), hop(3586, OUT)],
+                token_in: Coin::new("uosmo", "10000000").unwrap(),
+                token_out_min_amount: "340000".to_owned(),
+            },
+            Msg::SplitRouteSwapExactAmountIn {
+                sender: OSMO.to_owned(),
+                routes: vec![
+                    SwapAmountInSplitRoute {
+                        pools: vec![hop(3498, OUT)],
+                        token_in_amount: "5970000".to_owned(),
+                    },
+                    SwapAmountInSplitRoute {
+                        pools: vec![hop(1, ATOM), hop(3586, OUT)],
+                        token_in_amount: "3980000".to_owned(),
+                    },
+                ],
+                token_in_denom: "uosmo".to_owned(),
+                token_out_min_amount: "350000".to_owned(),
+            },
         ];
 
         for msg in &msgs {
@@ -601,6 +792,354 @@ mod tests {
         // And through the envelope form the bindings actually receive.
         let rendered = msgs_to_json(&msgs).to_string();
         assert_eq!(msgs_from_json(&rendered).unwrap(), msgs);
+    }
+
+    #[test]
+    fn parses_the_extension_swaps() {
+        assert_eq!(
+            parse(SWAP, swap_json()).unwrap(),
+            Msg::SwapExactAmountIn {
+                sender: OSMO.to_owned(),
+                routes: vec![hop(3586, OUT)],
+                token_in: Coin::new("uosmo", "9950000").unwrap(),
+                token_out_min_amount: "350000".to_owned(),
+            }
+        );
+        assert_eq!(
+            parse(SPLIT, split_json()).unwrap(),
+            Msg::SplitRouteSwapExactAmountIn {
+                sender: OSMO.to_owned(),
+                routes: vec![
+                    SwapAmountInSplitRoute {
+                        pools: vec![hop(3498, OUT)],
+                        token_in_amount: "5970000".to_owned(),
+                    },
+                    SwapAmountInSplitRoute {
+                        pools: vec![hop(3586, OUT)],
+                        token_in_amount: "3980000".to_owned(),
+                    },
+                ],
+                token_in_denom: "uosmo".to_owned(),
+                token_out_min_amount: "350000".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_pool_id_may_be_a_string_or_an_integral_number_and_leaves_as_a_string() {
+        for pool_id in [json!("3586"), json!(3586)] {
+            let mut value = swap_json();
+            value["routes"][0]["pool_id"] = pool_id.clone();
+            let msg = parse(SWAP, value).unwrap();
+            assert_eq!(
+                msg_to_proto_json(&msg)["routes"][0]["pool_id"],
+                json!("3586"),
+                "{pool_id} should be stored as 3586 and rendered as a string"
+            );
+
+            let mut value = split_json();
+            value["routes"][1]["pools"][0]["pool_id"] = pool_id.clone();
+            let msg = parse(SPLIT, value).unwrap();
+            assert_eq!(
+                msg_to_proto_json(&msg)["routes"][1]["pools"][0]["pool_id"],
+                json!("3586")
+            );
+        }
+    }
+
+    #[test]
+    fn a_pool_id_that_is_not_a_positive_integer_is_refused() {
+        for (pool_id, expected) in [
+            (json!(0), CosmosError::Swap("pool_id 0 does not exist")),
+            (json!("0"), CosmosError::Swap("pool_id 0 does not exist")),
+            (json!(-1), CosmosError::Decode),
+            (json!(3586.5), CosmosError::Decode),
+            (json!(1e3), CosmosError::Decode),
+            (json!("abc"), CosmosError::Decode),
+            (json!("-3586"), CosmosError::Decode),
+            (json!("18446744073709551616"), CosmosError::Decode),
+            (json!(true), CosmosError::Decode),
+            (json!(null), CosmosError::Decode),
+        ] {
+            let mut value = swap_json();
+            value["routes"][0]["pool_id"] = pool_id.clone();
+            assert_eq!(
+                parse(SWAP, value).unwrap_err(),
+                expected,
+                "{pool_id} should not be a pool id"
+            );
+        }
+    }
+
+    #[test]
+    fn a_swap_with_no_floor_is_refused_in_every_spelling() {
+        // "0" is the blank cheque. The bridge accepts an integral JSON number for an amount, as
+        // it does in a coin, so 0 must be caught there too.
+        for min in [json!("0"), json!(0)] {
+            let mut value = swap_json();
+            value["token_out_min_amount"] = min.clone();
+            assert!(
+                matches!(parse(SWAP, value).unwrap_err(), CosmosError::Swap(_)),
+                "{min} should be refused as no floor"
+            );
+            let mut value = split_json();
+            value["token_out_min_amount"] = min.clone();
+            assert!(matches!(
+                parse(SPLIT, value).unwrap_err(),
+                CosmosError::Swap(_)
+            ));
+        }
+        // A floor that is not a canonical integer is an amount error, before it is a swap one.
+        for min in [
+            json!("-1"),
+            json!("1.5"),
+            json!("0350000"),
+            json!(1.5),
+            json!(-1),
+        ] {
+            let mut value = swap_json();
+            value["token_out_min_amount"] = min.clone();
+            assert_eq!(
+                parse(SWAP, value).unwrap_err(),
+                CosmosError::Amount,
+                "{min} should not be an amount"
+            );
+        }
+        // And a missing floor is a missing field, not a default of zero.
+        let mut value = swap_json();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("token_out_min_amount");
+        assert_eq!(parse(SWAP, value).unwrap_err(), CosmosError::Decode);
+    }
+
+    #[test]
+    fn an_integral_number_floor_is_stored_as_a_string() {
+        let mut value = swap_json();
+        value["token_out_min_amount"] = json!(350000);
+        let msg = parse(SWAP, value).unwrap();
+        assert_eq!(msg, parse(SWAP, swap_json()).unwrap());
+    }
+
+    #[test]
+    fn malformed_swap_payloads_are_refused() {
+        let refusals: Vec<(&str, Value, CosmosError)> = vec![
+            // Routes missing, not an array, or empty.
+            (
+                SWAP,
+                {
+                    let mut v = swap_json();
+                    v.as_object_mut().unwrap().remove("routes");
+                    v
+                },
+                CosmosError::Decode,
+            ),
+            (
+                SWAP,
+                {
+                    let mut v = swap_json();
+                    v["routes"] = json!({ "pool_id": "3586", "token_out_denom": OUT });
+                    v
+                },
+                CosmosError::Decode,
+            ),
+            (
+                SWAP,
+                {
+                    let mut v = swap_json();
+                    v["routes"] = json!([]);
+                    v
+                },
+                CosmosError::Swap("routes is empty"),
+            ),
+            // camelCase keys are a different payload, refused rather than guessed at.
+            (
+                SWAP,
+                {
+                    let mut v = swap_json();
+                    v["routes"] = json!([{ "poolId": "3586", "tokenOutDenom": OUT }]);
+                    v
+                },
+                CosmosError::Decode,
+            ),
+            (
+                SWAP,
+                {
+                    let mut v = swap_json();
+                    v["routes"][0]["token_out_denom"] = json!("");
+                    v
+                },
+                CosmosError::Denom,
+            ),
+            (
+                SWAP,
+                {
+                    let mut v = swap_json();
+                    v["token_in"] = json!({ "denom": "uosmo", "amount": "0" });
+                    v
+                },
+                CosmosError::Swap("token_in is zero"),
+            ),
+            (
+                SWAP,
+                {
+                    let mut v = swap_json();
+                    v.as_object_mut().unwrap().remove("token_in");
+                    v
+                },
+                CosmosError::Decode,
+            ),
+            (
+                SWAP,
+                {
+                    let mut v = swap_json();
+                    v.as_object_mut().unwrap().remove("sender");
+                    v
+                },
+                CosmosError::Decode,
+            ),
+            // The split's own fields.
+            (
+                SPLIT,
+                {
+                    let mut v = split_json();
+                    v["routes"][0]["token_in_amount"] = json!("0");
+                    v
+                },
+                CosmosError::Swap("a split route's token_in_amount is zero"),
+            ),
+            (
+                SPLIT,
+                {
+                    let mut v = split_json();
+                    v["routes"][0]["pools"] = json!([]);
+                    v
+                },
+                CosmosError::Swap("a split route has no pools"),
+            ),
+            (
+                SPLIT,
+                {
+                    let mut v = split_json();
+                    v["routes"][0].as_object_mut().unwrap().remove("pools");
+                    v
+                },
+                CosmosError::Decode,
+            ),
+            (
+                SPLIT,
+                {
+                    let mut v = split_json();
+                    v["routes"][1]["pools"][0]["token_out_denom"] = json!(ATOM);
+                    v
+                },
+                CosmosError::Swap("the split routes end in different denoms"),
+            ),
+            (
+                SPLIT,
+                {
+                    let mut v = split_json();
+                    v["routes"][1]["pools"][0]["pool_id"] = json!("3498");
+                    v
+                },
+                CosmosError::Swap("two split routes take the same pools"),
+            ),
+            (
+                SPLIT,
+                {
+                    let mut v = split_json();
+                    v["token_in_denom"] = json!("");
+                    v
+                },
+                CosmosError::Denom,
+            ),
+            (
+                SPLIT,
+                {
+                    let mut v = split_json();
+                    v.as_object_mut().unwrap().remove("token_in_denom");
+                    v
+                },
+                CosmosError::Decode,
+            ),
+            // A split leg is not a coin: a token_in on the split message is not read, and the
+            // missing token_in_denom is what gets reported.
+            (
+                SPLIT,
+                {
+                    let mut v = split_json();
+                    v.as_object_mut().unwrap().remove("token_in_denom");
+                    v["token_in"] = json!({ "denom": "uosmo", "amount": "9950000" });
+                    v
+                },
+                CosmosError::Decode,
+            ),
+        ];
+        for (type_url, value, expected) in refusals {
+            assert_eq!(
+                parse(type_url, value.clone()).unwrap_err(),
+                expected,
+                "{value} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn swap_route_caps_hold_at_the_bridge() {
+        use crate::msg::{MAX_SWAP_HOPS, MAX_SWAP_SPLITS};
+
+        let hops = |count: usize| -> Value {
+            Value::Array(
+                (1..=count)
+                    .map(|id| json!({ "pool_id": id, "token_out_denom": OUT }))
+                    .collect(),
+            )
+        };
+        let mut at_cap = swap_json();
+        at_cap["routes"] = hops(MAX_SWAP_HOPS);
+        assert!(parse(SWAP, at_cap).is_ok());
+        let mut over = swap_json();
+        over["routes"] = hops(MAX_SWAP_HOPS.saturating_add(1));
+        assert!(matches!(
+            parse(SWAP, over).unwrap_err(),
+            CosmosError::Swap(_)
+        ));
+
+        let legs = |count: usize| -> Value {
+            Value::Array(
+                (1..=count)
+                    .map(|id| {
+                        json!({
+                            "pools": [{ "pool_id": id, "token_out_denom": OUT }],
+                            "token_in_amount": "1",
+                        })
+                    })
+                    .collect(),
+            )
+        };
+        let mut at_cap = split_json();
+        at_cap["routes"] = legs(MAX_SWAP_SPLITS);
+        assert!(parse(SPLIT, at_cap).is_ok());
+        let mut over = split_json();
+        over["routes"] = legs(MAX_SWAP_SPLITS.saturating_add(1));
+        assert!(matches!(
+            parse(SPLIT, over).unwrap_err(),
+            CosmosError::Swap(_)
+        ));
+    }
+
+    #[test]
+    fn unknown_keys_in_a_swap_never_reach_the_bytes() {
+        // The module rule, applied to a swap: an extra key is dropped, so the transaction can
+        // only ever do less than the caller sent, never more.
+        let mut value = swap_json();
+        value["token_out_max_amount"] = json!("1");
+        value["routes"][0]["token_in_denom"] = json!("uatom");
+        assert_eq!(
+            parse(SWAP, value).unwrap(),
+            parse(SWAP, swap_json()).unwrap()
+        );
     }
 
     #[test]

@@ -126,6 +126,39 @@ pub fn validate_amount(amount: &str) -> Result<()> {
     Ok(())
 }
 
+/// Adds two amounts, digit by digit, without converting either to a machine integer.
+///
+/// String arithmetic for the reason the rest of this module is string based: an `sdk.Int` is
+/// 256 bits, so a `u128` sum overflows on amounts the chain accepts, and a sum that saturated
+/// or wrapped would put a wrong total in front of the user. Returns `None` rather than guessing
+/// when either side is not a run of ASCII digits.
+pub(crate) fn add_amounts(a: &str, b: &str) -> Option<String> {
+    let is_digits = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+    if !is_digits(a) || !is_digits(b) {
+        return None;
+    }
+
+    let mut left = a.bytes().rev();
+    let mut right = b.bytes().rev();
+    let mut digits = Vec::with_capacity(a.len().max(b.len()).saturating_add(1));
+    let mut carry = 0u8;
+    loop {
+        let (x, y) = (left.next(), right.next());
+        if x.is_none() && y.is_none() && carry == 0 {
+            break;
+        }
+        // At most 9 + 9 + 1, so the column sum never leaves a u8.
+        let column = x.map_or(0, |d| d - b'0') + y.map_or(0, |d| d - b'0') + carry;
+        digits.push(b'0' + column % 10);
+        carry = column / 10;
+    }
+    while digits.len() > 1 && digits.last() == Some(&b'0') {
+        digits.pop();
+    }
+    digits.reverse();
+    String::from_utf8(digits).ok()
+}
+
 /// Validates a denom against the Cosmos SDK rules.
 ///
 /// Base rule: 3 to 128 characters, starting with a letter, then letters, digits, and any of
@@ -333,6 +366,42 @@ mod tests {
         assert!(fee_from_gas(200_000, -1.0, "uatom").is_err());
         assert!(fee_from_gas(200_000, f64::NAN, "uatom").is_err());
         assert!(fee_from_gas(200_000, f64::INFINITY, "uatom").is_err());
+    }
+
+    #[test]
+    fn amounts_add_as_strings_beyond_u128() {
+        assert_eq!(
+            add_amounts("5970000", "3980000").as_deref(),
+            Some("9950000")
+        );
+        assert_eq!(add_amounts("0", "0").as_deref(), Some("0"));
+        assert_eq!(add_amounts("1", "999").as_deref(), Some("1000"));
+        assert_eq!(add_amounts("999", "1").as_deref(), Some("1000"));
+        // u128::MAX + 1, which a machine integer cannot hold.
+        assert_eq!(
+            add_amounts("340282366920938463463374607431768211455", "1").as_deref(),
+            Some("340282366920938463463374607431768211456")
+        );
+        // Two 78-digit amounts, the sdk.Int ceiling validate_amount allows, carry into 79.
+        let nines = "9".repeat(78);
+        assert_eq!(
+            add_amounts(&nines, &nines),
+            Some(format!("1{}8", "9".repeat(77)))
+        );
+    }
+
+    #[test]
+    fn adding_something_that_is_not_an_amount_is_refused() {
+        for (a, b) in [
+            ("", "1"),
+            ("1", ""),
+            ("-1", "1"),
+            ("1.5", "1"),
+            ("1", "1e3"),
+            (" 1", "1"),
+        ] {
+            assert_eq!(add_amounts(a, b), None, "{a:?} + {b:?} should not add");
+        }
     }
 
     #[test]

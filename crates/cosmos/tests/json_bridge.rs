@@ -21,7 +21,7 @@ use zunia_cosmos::json::{
     fee_from_json, msg_from_proto_json, msg_to_proto_json, msgs_from_json, msgs_to_json,
     sign_mode_from_str,
 };
-use zunia_cosmos::msg::{Height, Msg, VoteOption};
+use zunia_cosmos::msg::{Height, Msg, SwapAmountInRoute, SwapAmountInSplitRoute, VoteOption};
 use zunia_cosmos::tx::{Fee, SignMode, SignerData, UnsignedTx};
 use zunia_cosmos::CosmosError;
 
@@ -54,11 +54,21 @@ fn str_at(value: &Value, path: &[&str]) -> String {
         .to_owned()
 }
 
+/// ATOM over IBC on Osmosis, and the token both of the generator's swap pools hold.
+const ATOM_ON_OSMOSIS: &str =
+    "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
+const SWAP_OUT_DENOM: &str = "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
+
 fn message_for(name: &str, addresses: &Value) -> Msg {
     let from = str_at(addresses, &["cosmos"]);
     let valoper = str_at(addresses, &["cosmosvaloper"]);
     let safro = str_at(addresses, &["addr_safro"]);
+    let osmo = str_at(addresses, &["osmo"]);
     let to = "cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz".to_owned();
+    let hop = |pool_id: u64, token_out_denom: &str| SwapAmountInRoute {
+        pool_id,
+        token_out_denom: token_out_denom.to_owned(),
+    };
 
     match name {
         "msg_send" => Msg::Send {
@@ -125,6 +135,33 @@ fn message_for(name: &str, addresses: &Value) -> Msg {
             msg: br#"{"swap":{"offer":"100"}}"#.to_vec(),
             funds: vec![Coin::new("uatom", "100").unwrap()],
         },
+        "msg_swap_exact_amount_in" => Msg::SwapExactAmountIn {
+            sender: osmo,
+            routes: vec![hop(3586, SWAP_OUT_DENOM)],
+            token_in: Coin::new("uosmo", "9950000").unwrap(),
+            token_out_min_amount: "350000".to_owned(),
+        },
+        "msg_swap_exact_amount_in_multi_hop" => Msg::SwapExactAmountIn {
+            sender: osmo,
+            routes: vec![hop(1, ATOM_ON_OSMOSIS), hop(3586, SWAP_OUT_DENOM)],
+            token_in: Coin::new("uosmo", "10000000").unwrap(),
+            token_out_min_amount: "340000".to_owned(),
+        },
+        "msg_split_route_swap_exact_amount_in" => Msg::SplitRouteSwapExactAmountIn {
+            sender: osmo,
+            routes: vec![
+                SwapAmountInSplitRoute {
+                    pools: vec![hop(3498, SWAP_OUT_DENOM)],
+                    token_in_amount: "6000000".to_owned(),
+                },
+                SwapAmountInSplitRoute {
+                    pools: vec![hop(3586, SWAP_OUT_DENOM)],
+                    token_in_amount: "4000000".to_owned(),
+                },
+            ],
+            token_in_denom: "uosmo".to_owned(),
+            token_out_min_amount: "350000".to_owned(),
+        },
         other => panic!(
             "vector \"{other}\" has no Rust counterpart; add it to message_for or remove it \
              from the generator"
@@ -171,7 +208,7 @@ fn every_vector_round_trips_through_proto_json() {
     }
 
     assert!(
-        checked >= 9,
+        checked >= 12,
         "expected the full vector set minus {NO_TIMEOUT}"
     );
 }
@@ -260,6 +297,176 @@ fn a_hand_written_envelope_matches_the_golden_send() {
     assert_eq!(
         sign_mode_from_str("amino").unwrap(),
         SignMode::LegacyAminoJson
+    );
+}
+
+#[test]
+fn hand_written_swap_envelopes_match_the_osmojs_vectors() {
+    // The shape the extension sends, typed out rather than rendered by msg_to_proto_json, and
+    // asserted against bytes osmojs produced. Pool ids arrive as strings in the first two and as
+    // JSON numbers in the split, because clients emit both and both must reach the same bytes.
+    let vectors = load();
+    let osmo = str_at(&vectors, &["key", "addresses", "osmo"]);
+    let signer = signer_from(&vectors);
+    let fee = fee_from_json(golden_fee_json()).unwrap();
+
+    let envelopes = [
+        (
+            "msg_swap_exact_amount_in",
+            json!({
+                "typeUrl": "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn",
+                "value": {
+                    "sender": osmo,
+                    "routes": [{ "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM }],
+                    "token_in": { "denom": "uosmo", "amount": "9950000" },
+                    "token_out_min_amount": "350000",
+                },
+            }),
+        ),
+        (
+            "msg_swap_exact_amount_in_multi_hop",
+            json!({
+                "typeUrl": "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn",
+                "value": {
+                    "sender": osmo,
+                    "routes": [
+                        { "pool_id": "1", "token_out_denom": ATOM_ON_OSMOSIS },
+                        { "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM },
+                    ],
+                    "token_in": { "denom": "uosmo", "amount": "10000000" },
+                    "token_out_min_amount": "340000",
+                },
+            }),
+        ),
+        (
+            "msg_split_route_swap_exact_amount_in",
+            json!({
+                "typeUrl": "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn",
+                "value": {
+                    "sender": osmo,
+                    "routes": [
+                        {
+                            "pools": [{ "pool_id": 3498, "token_out_denom": SWAP_OUT_DENOM }],
+                            "token_in_amount": "6000000",
+                        },
+                        {
+                            "pools": [{ "pool_id": 3586, "token_out_denom": SWAP_OUT_DENOM }],
+                            "token_in_amount": "4000000",
+                        },
+                    ],
+                    "token_in_denom": "uosmo",
+                    "token_out_min_amount": "350000",
+                },
+            }),
+        ),
+    ];
+
+    for (name, envelope) in envelopes {
+        let case = vectors["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == json!(name))
+            .unwrap()
+            .clone();
+        let msgs = msgs_from_json(&Value::Array(vec![envelope]).to_string()).unwrap();
+        let tx = UnsignedTx::new(msgs, fee.clone(), "").unwrap();
+        for (mode, key) in [
+            (SignMode::Direct, "direct"),
+            (SignMode::LegacyAminoJson, "amino"),
+        ] {
+            assert_eq!(
+                hex::encode(tx.sign_bytes(&signer, mode).unwrap()),
+                str_at(&case, &[key, "sign_bytes_hex"]),
+                "{name}: {key} sign bytes from the hand-written envelope diverged from osmojs"
+            );
+        }
+        // Rendered back, every pool id is a string, whatever it arrived as.
+        let rendered = msgs_to_json(&tx.msgs);
+        let hops: Vec<&Value> = match name {
+            "msg_split_route_swap_exact_amount_in" => rendered[0]["value"]["routes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|leg| leg["pools"].as_array().unwrap())
+                .collect(),
+            _ => rendered[0]["value"]["routes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .collect(),
+        };
+        assert!(!hops.is_empty());
+        for hop in hops {
+            assert!(hop["pool_id"].is_string(), "{name}: {hop}");
+        }
+    }
+}
+
+#[test]
+fn the_extension_example_swaps_parse_and_say_what_they_do() {
+    // The two payloads the extension's swap screen sends, verbatim apart from the sender. The
+    // split is the router's real answer for 9.95 OSMO: 5.97 through pool 3498 and 3.98 through
+    // 3586, so the prompt has to show the sum.
+    let vectors = load();
+    let osmo = str_at(&vectors, &["key", "addresses", "osmo"]);
+    let envelopes = json!([
+        {
+            "typeUrl": "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn",
+            "value": {
+                "sender": osmo,
+                "routes": [{ "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM }],
+                "token_in": { "denom": "uosmo", "amount": "9950000" },
+                "token_out_min_amount": "350000",
+            },
+        },
+        {
+            "typeUrl": "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn",
+            "value": {
+                "sender": osmo,
+                "routes": [
+                    {
+                        "pools": [{ "pool_id": "3498", "token_out_denom": SWAP_OUT_DENOM }],
+                        "token_in_amount": "5970000",
+                    },
+                    {
+                        "pools": [{ "pool_id": "3586", "token_out_denom": SWAP_OUT_DENOM }],
+                        "token_in_amount": "3980000",
+                    },
+                ],
+                "token_in_denom": "uosmo",
+                "token_out_min_amount": "350000",
+            },
+        },
+    ]);
+
+    let msgs = msgs_from_json(&envelopes.to_string()).unwrap();
+    assert_eq!(
+        msgs[0].summary(),
+        format!("Swap 9950000 uosmo for at least 350000 {SWAP_OUT_DENOM} through pool 3586")
+    );
+    assert_eq!(
+        msgs[1].summary(),
+        format!(
+            "Swap 9950000 uosmo for at least 350000 {SWAP_OUT_DENOM} through 2 routes \
+             (pools 3498; 3586)"
+        )
+    );
+    for msg in &msgs {
+        assert!(msg.spends_funds());
+        assert_eq!(msg.addresses(), vec![osmo.as_str()]);
+        assert!(msg.validate_addresses("osmo").is_ok());
+        assert_eq!(
+            msg.validate_addresses("cosmos").unwrap_err(),
+            CosmosError::Address,
+            "an osmo sender is refused when signing for another chain"
+        );
+    }
+
+    // And the bridge's rendering is what it parsed: re-parsing it is the identity.
+    assert_eq!(
+        msgs_from_json(&msgs_to_json(&msgs).to_string()).unwrap(),
+        msgs
     );
 }
 
