@@ -14,6 +14,13 @@
  * written by hand here, so the type URL, the Amino name, the field numbers and the Amino shape
  * the Rust side is asserted against are osmojs's. CosmJS still assembles both sign documents.
  *
+ * No Amino value is written by hand for the other messages either. Each one is rebuilt from the
+ * case's own protobuf bytes by the converter a CosmJS client registers for its type URL:
+ * `@cosmjs/stargate`'s defaults, pinned to 0.32.3 (the version osmojs resolves), and osmojs's
+ * wasm converter for `MsgExecuteContract`. A hand-typed expectation is how a vector ends up
+ * asserting the implementation's own bug back at itself, and two did: a vote option written as
+ * its name, and an IBC transfer without its empty `timeout_height`. The chain rejects both.
+ *
  * Regenerate after any change to the message set or to a proto version pin:
  *
  *   cd tests/vectors/generate && pnpm install && pnpm generate
@@ -33,8 +40,9 @@ import {
   makeSignBytes,
 } from '@cosmjs/proto-signing';
 import { makeSignDoc as makeAminoSignDoc, serializeSignDoc } from '@cosmjs/amino';
-import { Bip39, EnglishMnemonic, Slip10, Slip10Curve, stringToPath } from '@cosmjs/crypto';
-import { fromBech32, toBech32, toHex } from '@cosmjs/encoding';
+import { Bip39, EnglishMnemonic, Slip10, Slip10Curve, sha256, stringToPath } from '@cosmjs/crypto';
+import { fromBech32, toBech32, toHex, toUtf8 } from '@cosmjs/encoding';
+import { AminoTypes, createDefaultAminoConverters } from '@cosmjs/stargate';
 
 import { TxBody, AuthInfo, SignerInfo, Fee } from 'cosmjs-types/cosmos/tx/v1beta1/tx.js';
 import { SignMode } from 'cosmjs-types/cosmos/tx/signing/v1beta1/signing.js';
@@ -52,6 +60,8 @@ import {
   MsgSplitRouteSwapExactAmountIn,
 } from 'osmojs/osmosis/poolmanager/v1beta1/tx.js';
 import { AminoConverter as PoolmanagerAmino } from 'osmojs/osmosis/poolmanager/v1beta1/tx.amino.js';
+import { MsgExecuteContract as OsmojsExecuteContract } from 'osmojs/cosmwasm/wasm/v1/tx.js';
+import { AminoConverter as WasmAmino } from 'osmojs/cosmwasm/wasm/v1/tx.amino.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OSMOJS_VERSION = createRequire(import.meta.url)('osmojs/package.json').version;
@@ -88,6 +98,16 @@ const OSMO_SENDER = toBech32('osmo', accountBytes, 200);
 const ATOM_ON_OSMOSIS = 'ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2';
 const SWAP_OUT_DENOM = 'ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138';
 
+// The Osmosis crosschain-swaps contract, a real one. wasmd derives every instantiated contract's
+// address as 32 bytes; only an account is 20.
+const XCS = 'osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs';
+// The same 32 bytes under the hub's prefix: what a send to a contract, an interchain account or a
+// DAO treasury carries.
+const TO_32_BYTE = toBech32('cosmos', fromBech32(XCS, 200).data, 200);
+// A CW721 collection. Any 32 bytes have a contract's shape; these are the signing harness's.
+const CW721 = toBech32('osmo', sha256(toUtf8('cw721 test collection')), 200);
+const NFT_RECIPIENT = toBech32('osmo', fromBech32(TO, 200).data, 200);
+
 /**
  * A case built entirely by osmojs: the message through its `fromPartial` and `encode`, the Amino
  * `{type, value}` through the converter a CosmJS client registers for that type URL.
@@ -104,7 +124,10 @@ function osmosisCase(name, Msg, value) {
   };
 }
 
-/** Each case supplies the protobuf `Any` and the equivalent Amino `{type, value}`. */
+/**
+ * Each case supplies the protobuf `Any`. Its Amino `{type, value}` is derived from those bytes
+ * below, by `aminoOf`; the swaps carry osmojs's from `osmosisCase`.
+ */
 const cases = [
   {
     name: 'msg_send',
@@ -114,14 +137,6 @@ const cases = [
       toAddress: TO,
       amount: [{ denom: 'uatom', amount: '1000000' }],
     })).finish(),
-    amino: {
-      type: 'cosmos-sdk/MsgSend',
-      value: {
-        from_address: FROM,
-        to_address: TO,
-        amount: [{ denom: 'uatom', amount: '1000000' }],
-      },
-    },
     memo: '',
   },
   {
@@ -132,14 +147,6 @@ const cases = [
       toAddress: TO,
       amount: [{ denom: 'uatom', amount: '1' }],
     })).finish(),
-    amino: {
-      type: 'cosmos-sdk/MsgSend',
-      value: {
-        from_address: FROM,
-        to_address: TO,
-        amount: [{ denom: 'uatom', amount: '1' }],
-      },
-    },
     // Exchange deposit memos are the reason memo handling has to be exact.
     memo: 'deposit-id:1234567890',
   },
@@ -151,14 +158,6 @@ const cases = [
       validatorAddress: VALOPER,
       amount: { denom: 'uatom', amount: '5000000' },
     })).finish(),
-    amino: {
-      type: 'cosmos-sdk/MsgDelegate',
-      value: {
-        delegator_address: FROM,
-        validator_address: VALOPER,
-        amount: { denom: 'uatom', amount: '5000000' },
-      },
-    },
     memo: '',
   },
   {
@@ -169,14 +168,6 @@ const cases = [
       validatorAddress: VALOPER,
       amount: { denom: 'uatom', amount: '1000000' },
     })).finish(),
-    amino: {
-      type: 'cosmos-sdk/MsgUndelegate',
-      value: {
-        delegator_address: FROM,
-        validator_address: VALOPER,
-        amount: { denom: 'uatom', amount: '1000000' },
-      },
-    },
     memo: '',
   },
   {
@@ -188,29 +179,16 @@ const cases = [
       validatorDstAddress: VALOPER_DST,
       amount: { denom: 'uatom', amount: '1000000' },
     })).finish(),
-    amino: {
-      type: 'cosmos-sdk/MsgBeginRedelegate',
-      value: {
-        delegator_address: FROM,
-        validator_src_address: VALOPER,
-        validator_dst_address: VALOPER_DST,
-        amount: { denom: 'uatom', amount: '1000000' },
-      },
-    },
     memo: '',
   },
   {
+    // Its Amino name is cosmos-sdk/MsgWithdrawDelegationReward: Delegation, not Delegator.
     name: 'msg_withdraw_delegator_reward',
     typeUrl: '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward',
     proto: MsgWithdrawDelegatorReward.encode(MsgWithdrawDelegatorReward.fromPartial({
       delegatorAddress: FROM,
       validatorAddress: VALOPER,
     })).finish(),
-    amino: {
-      // Delegation, not Delegator. The Amino registry name differs from the proto name.
-      type: 'cosmos-sdk/MsgWithdrawDelegationReward',
-      value: { delegator_address: FROM, validator_address: VALOPER },
-    },
     memo: '',
   },
   {
@@ -219,12 +197,9 @@ const cases = [
     proto: MsgVote.encode(MsgVote.fromPartial({
       proposalId: BigInt(848),
       voter: FROM,
-      option: 4, // VOTE_OPTION_NO_WITH_VETO
+      // VOTE_OPTION_NO_WITH_VETO. Amino writes the number as well, not the name.
+      option: 4,
     })).finish(),
-    amino: {
-      type: 'cosmos-sdk/MsgVote',
-      value: { proposal_id: '848', voter: FROM, option: 'VOTE_OPTION_NO_WITH_VETO' },
-    },
     memo: '',
   },
   {
@@ -237,16 +212,6 @@ const cases = [
       sender: FROM,
       receiver: SAFRO,
     })).finish(),
-    amino: {
-      type: 'cosmos-sdk/MsgTransfer',
-      value: {
-        source_port: 'transfer',
-        source_channel: 'channel-141',
-        token: { denom: 'uatom', amount: '1000000' },
-        sender: FROM,
-        receiver: SAFRO,
-      },
-    },
     memo: '',
   },
   {
@@ -262,19 +227,6 @@ const cases = [
       timeoutTimestamp: BigInt('1700000000000000000'),
       memo: 'forward',
     })).finish(),
-    amino: {
-      type: 'cosmos-sdk/MsgTransfer',
-      value: {
-        source_port: 'transfer',
-        source_channel: 'channel-141',
-        token: { denom: 'uatom', amount: '1000000' },
-        sender: FROM,
-        receiver: SAFRO,
-        timeout_height: { revision_number: '1', revision_height: '20000000' },
-        timeout_timestamp: '1700000000000000000',
-        memo: 'forward',
-      },
-    },
     memo: '',
   },
   {
@@ -283,19 +235,10 @@ const cases = [
     proto: MsgExecuteContract.encode(MsgExecuteContract.fromPartial({
       sender: FROM,
       contract: TO,
+      // Protobuf carries the contract message as raw bytes, Amino embeds it as parsed JSON.
       msg: new TextEncoder().encode(JSON.stringify({ swap: { offer: '100' } })),
       funds: [{ denom: 'uatom', amount: '100' }],
     })).finish(),
-    amino: {
-      type: 'wasm/MsgExecuteContract',
-      value: {
-        sender: FROM,
-        contract: TO,
-        // Amino embeds the contract message as parsed JSON, protobuf as raw bytes.
-        msg: { swap: { offer: '100' } },
-        funds: [{ denom: 'uatom', amount: '100' }],
-      },
-    },
     memo: '',
   },
   osmosisCase('msg_swap_exact_amount_in', MsgSwapExactAmountIn, {
@@ -323,7 +266,109 @@ const cases = [
     tokenInDenom: 'uosmo',
     tokenOutMinAmount: '350000',
   }),
+  {
+    // & < > in a signed string. Go's encoding/json, which rebuilds the document the chain
+    // verifies, writes them as & < >, and so does serializeSignDoc. Signed
+    // unescaped, a memo like this one verifies against nothing.
+    name: 'msg_send_memo_html',
+    typeUrl: '/cosmos.bank.v1beta1.MsgSend',
+    proto: MsgSend.encode(MsgSend.fromPartial({
+      fromAddress: FROM,
+      toAddress: TO,
+      amount: [{ denom: 'uatom', amount: '1' }],
+    })).finish(),
+    memo: 'rent & food <3>',
+  },
+  {
+    // A recipient that is not an account: 32 bytes under the sender's own prefix.
+    name: 'msg_send_to_32_byte',
+    typeUrl: '/cosmos.bank.v1beta1.MsgSend',
+    proto: MsgSend.encode(MsgSend.fromPartial({
+      fromAddress: FROM,
+      toAddress: TO_32_BYTE,
+      amount: [{ denom: 'uatom', amount: '1000000' }],
+    })).finish(),
+    memo: '',
+  },
+  {
+    // A crosschain swap's recovery: a 32-byte contract and no coins attached, which Amino still
+    // writes as "funds":[].
+    name: 'msg_execute_contract_32_no_funds',
+    typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+    proto: MsgExecuteContract.encode(MsgExecuteContract.fromPartial({
+      sender: OSMO_SENDER,
+      contract: XCS,
+      msg: new TextEncoder().encode(JSON.stringify({ recover: {} })),
+      funds: [],
+    })).finish(),
+    memo: '',
+  },
+  {
+    // An NFT whose token id carries an &. Amino embeds the contract message as JSON, so the
+    // escaping reaches inside it.
+    name: 'msg_execute_contract_nft_html',
+    typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+    proto: MsgExecuteContract.encode(MsgExecuteContract.fromPartial({
+      sender: OSMO_SENDER,
+      contract: CW721,
+      msg: new TextEncoder().encode(
+        JSON.stringify({ transfer_nft: { recipient: NFT_RECIPIENT, token_id: 'rock & roll' } }),
+      ),
+      funds: [],
+    })).finish(),
+    memo: '',
+  },
+  {
+    // What a wallet sends: a timestamp and no height. Amino still writes "timeout_height":{}.
+    name: 'msg_transfer_timestamp_only',
+    typeUrl: '/ibc.applications.transfer.v1.MsgTransfer',
+    proto: MsgTransfer.encode(MsgTransfer.fromPartial({
+      sourcePort: 'transfer',
+      sourceChannel: 'channel-141',
+      token: { denom: 'uatom', amount: '1000000' },
+      sender: FROM,
+      receiver: OSMO_SENDER,
+      timeoutTimestamp: BigInt('1791400000000000000'),
+    })).finish(),
+    memo: '',
+  },
 ];
+
+// The converter a CosmJS client registers for each type URL: @cosmjs/stargate's defaults, and
+// osmojs's wasm converter for contract calls, which stargate does not register. Each reads the
+// case's own protobuf bytes, so the Amino value describes exactly the message the Direct vector
+// carries.
+const aminoTypes = new AminoTypes(createDefaultAminoConverters());
+const COSMJS_TYPES = Object.fromEntries(
+  [
+    MsgSend,
+    MsgDelegate,
+    MsgUndelegate,
+    MsgBeginRedelegate,
+    MsgWithdrawDelegatorReward,
+    MsgVote,
+    MsgTransfer,
+  ].map((Msg) => [Msg.typeUrl, Msg]),
+);
+
+function aminoOf({ typeUrl, proto }) {
+  if (typeUrl === MsgExecuteContract.typeUrl) {
+    const converter = WasmAmino[typeUrl];
+    return {
+      type: converter.aminoType,
+      value: converter.toAmino(OsmojsExecuteContract.decode(proto)),
+    };
+  }
+  const Msg = COSMJS_TYPES[typeUrl];
+  if (!Msg) {
+    throw new Error(`${typeUrl}: no reference converter to derive the Amino value from`);
+  }
+  return aminoTypes.toAmino({ typeUrl, value: Msg.decode(proto) });
+}
+
+for (const testCase of cases) {
+  testCase.amino ??= aminoOf(testCase);
+}
 
 const pubkeyAny = Any.fromPartial({
   typeUrl: '/cosmos.crypto.secp256k1.PubKey',

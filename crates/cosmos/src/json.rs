@@ -248,8 +248,8 @@ pub fn msg_to_proto_json(msg: &Msg) -> Value {
             // already passed through a double on the JavaScript side.
             "proposal_id": proposal_id.to_string(),
             "voter": voter,
-            // The proto enum name, which is also what the Amino document carries.
-            "option": option.amino_name(),
+            // The proto enum name. The Amino document carries the number instead.
+            "option": option.proto_name(),
         }),
         Msg::IbcTransfer {
             source_port,

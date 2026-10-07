@@ -36,6 +36,11 @@
 //! discovers mid-execution, and route length and split count are capped, which the chain does
 //! not do at all. See [`validate_swap_exact_amount_in`] and
 //! [`validate_split_route_swap_exact_amount_in`].
+//!
+//! The exact-out swaps, `MsgSwapExactAmountOut` and `MsgSplitRouteSwapExactAmountOut`, are not
+//! built here, only described when a dApp hands them over (see [`crate::decode`]). The decoder
+//! holds them to the same kind of rules first, in [`validate_swap_exact_amount_out`] and
+//! [`validate_split_route_swap_exact_amount_out`].
 
 use serde_json::{json, Value};
 
@@ -54,8 +59,9 @@ pub enum VoteOption {
 }
 
 impl VoteOption {
-    /// The Amino JSON spelling, which is the full enum name and not the short form.
-    pub fn amino_name(self) -> &'static str {
+    /// The proto-JSON spelling: the full enum name, not the short form. Amino does not use it;
+    /// the chain's Amino encoder writes the enum's number, as [`Msg::encode_amino`] does.
+    pub fn proto_name(self) -> &'static str {
         match self {
             Self::Yes => "VOTE_OPTION_YES",
             Self::Abstain => "VOTE_OPTION_ABSTAIN",
@@ -351,6 +357,142 @@ pub(crate) fn split_input(legs: &[SwapAmountInSplitRoute]) -> String {
 /// Shown in place of a denom the summary cannot name. Only a swap that fails the rules above can
 /// produce it, and such a swap is never built by the bridge nor described by the decoder.
 const UNREADABLE_DENOM: &str = "an unreadable denom";
+
+/// One hop of an exact-out swap, `osmosis.poolmanager.v1beta1.SwapAmountOutRoute`.
+///
+/// Names the pool and the denom that goes into it. What comes out is implicit: the next hop's
+/// input, and after the last hop the swap's `token_out`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwapAmountOutRoute {
+    pub pool_id: u64,
+    pub token_in_denom: String,
+}
+
+/// One leg of a split exact-out swap, `osmosis.poolmanager.v1beta1.SwapAmountOutSplitRoute`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwapAmountOutSplitRoute {
+    /// The pools this leg passes through, in order.
+    pub pools: Vec<SwapAmountOutRoute>,
+    /// This leg's share of the output. The shares add up to what the sender receives.
+    pub token_out_amount: String,
+}
+
+/// The rules an exact-out swap must meet before the wallet describes it.
+///
+/// The poolmanager's `ValidateBasic` for `MsgSwapExactAmountOut` (a route, valid denoms, a
+/// positive `token_out` and a positive `token_in_max_amount`) plus the wallet's route rules: no
+/// pool 0 and at most [`MAX_SWAP_HOPS`] pools. The maximum is the only price limit an exact-out
+/// swap carries, which is why the prompt names it first.
+pub fn validate_swap_exact_amount_out(
+    routes: &[SwapAmountOutRoute],
+    token_in_max_amount: &str,
+    token_out: &Coin,
+) -> Result<()> {
+    if routes.is_empty() {
+        return Err(CosmosError::Swap("routes is empty"));
+    }
+    validate_out_hops(routes)?;
+    validate_denom(&token_out.denom)?;
+    validate_nonzero_amount(&token_out.amount, "token_out is zero")?;
+    validate_nonzero_amount(token_in_max_amount, "token_in_max_amount is zero")
+}
+
+/// The rules a split exact-out swap must meet: one to [`MAX_SWAP_SPLITS`] legs, each a valid
+/// route with a positive share, all spending the same denom, no two over the same pools, a valid
+/// `token_out_denom` and a positive `token_in_max_amount`.
+pub fn validate_split_route_swap_exact_amount_out(
+    routes: &[SwapAmountOutSplitRoute],
+    token_out_denom: &str,
+    token_in_max_amount: &str,
+) -> Result<()> {
+    if routes.is_empty() {
+        return Err(CosmosError::Swap("routes is empty"));
+    }
+    if routes.len() > MAX_SWAP_SPLITS {
+        return Err(CosmosError::Swap("routes has more than 16 split legs"));
+    }
+    validate_denom(token_out_denom)?;
+    let mut input: Option<&str> = None;
+    for (index, leg) in routes.iter().enumerate() {
+        if leg.pools.is_empty() {
+            return Err(CosmosError::Swap("a split route has no pools"));
+        }
+        let leg_input = validate_out_hops(&leg.pools)?;
+        validate_nonzero_amount(
+            &leg.token_out_amount,
+            "a split route's token_out_amount is zero",
+        )?;
+        if input.is_some_and(|first| first != leg_input) {
+            return Err(CosmosError::Swap("the split routes spend different denoms"));
+        }
+        input = Some(leg_input);
+        if routes[..index]
+            .iter()
+            .any(|earlier| earlier.pools == leg.pools)
+        {
+            return Err(CosmosError::Swap("two split routes take the same pools"));
+        }
+    }
+    validate_nonzero_amount(token_in_max_amount, "token_in_max_amount is zero")
+}
+
+/// Checks an exact-out route's hops and returns the denom the route spends.
+fn validate_out_hops(hops: &[SwapAmountOutRoute]) -> Result<&str> {
+    if hops.len() > MAX_SWAP_HOPS {
+        return Err(CosmosError::Swap(
+            "a route passes through more than 8 pools",
+        ));
+    }
+    for hop in hops {
+        if hop.pool_id == 0 {
+            return Err(CosmosError::Swap("pool_id 0 does not exist"));
+        }
+        validate_denom(&hop.token_in_denom)?;
+    }
+    hops.first()
+        .map(|hop| hop.token_in_denom.as_str())
+        .ok_or(CosmosError::Swap("routes is empty"))
+}
+
+fn out_hop_ids(hops: &[SwapAmountOutRoute]) -> String {
+    let ids: Vec<String> = hops.iter().map(|hop| hop.pool_id.to_string()).collect();
+    ids.join(" → ")
+}
+
+/// `pool 1`, or `pools 1 → 3586`, as for an exact-in route.
+pub(crate) fn describe_out_hops(hops: &[SwapAmountOutRoute]) -> String {
+    let label = if hops.len() == 1 { "pool" } else { "pools" };
+    format!("{label} {}", out_hop_ids(hops))
+}
+
+/// `2 routes (pools 3498; 3586)`, as for an exact-in split.
+pub(crate) fn describe_out_split(legs: &[SwapAmountOutSplitRoute]) -> String {
+    let pools: usize = legs.iter().map(|leg| leg.pools.len()).sum();
+    let ids: Vec<String> = legs.iter().map(|leg| out_hop_ids(&leg.pools)).collect();
+    format!(
+        "{} {} ({} {})",
+        legs.len(),
+        if legs.len() == 1 { "route" } else { "routes" },
+        if pools == 1 { "pool" } else { "pools" },
+        ids.join("; ")
+    )
+}
+
+/// The denom an exact-out route spends: the first hop's input.
+pub(crate) fn out_route_input(hops: &[SwapAmountOutRoute]) -> &str {
+    hops.first()
+        .map(|hop| hop.token_in_denom.as_str())
+        .unwrap_or(UNREADABLE_DENOM)
+}
+
+/// What a split exact-out swap delivers in total: the sum of its legs.
+pub(crate) fn split_out_total(legs: &[SwapAmountOutSplitRoute]) -> String {
+    legs.iter()
+        .try_fold("0".to_owned(), |total, leg| {
+            add_amounts(&total, &leg.token_out_amount)
+        })
+        .unwrap_or_else(|| "an unreadable amount of".to_owned())
+}
 
 fn encode_hops(hops: &[SwapAmountInRoute]) -> Vec<Vec<u8>> {
     hops.iter().map(SwapAmountInRoute::encode_proto).collect()
@@ -675,7 +817,9 @@ impl Msg {
                 // Quoted: proposal ids exceed 2^53 on no chain today, but the wire format
                 // stringifies every uint64 and consistency is what keeps the bytes right.
                 ("proposal_id", json!(proposal_id.to_string())),
-                ("option", json!(option.amino_name())),
+                // The enum's number: the chain's amino encoder writes enums as integers, and so
+                // does CosmJS's gov converter. The name is the proto-JSON spelling, not Amino's.
+                ("option", json!(*option as i32)),
                 ("voter", json!(voter)),
             ]),
             Self::IbcTransfer {
@@ -688,24 +832,19 @@ impl Msg {
                 timeout_timestamp,
                 memo,
             } => {
-                let height = timeout_height.encode_amino();
-                object_omit_empty([
+                let mut value = object_omit_empty([
                     ("memo", json!(memo)),
                     ("receiver", json!(receiver)),
                     ("sender", json!(sender)),
                     ("source_channel", json!(source_channel)),
                     ("source_port", json!(source_port)),
-                    (
-                        "timeout_height",
-                        if timeout_height.is_zero() {
-                            Value::Null
-                        } else {
-                            height
-                        },
-                    ),
                     ("timeout_timestamp", stringify_nonzero(*timeout_timestamp)),
                     ("token", amino_coin(token)),
-                ])
+                ]);
+                // Non-nullable and amino.dont_omitempty in ibc-go: always present, `{}` when the
+                // height is 0-0, which is every timestamp-only transfer.
+                always(&mut value, "timeout_height", timeout_height.encode_amino());
+                value
             }
             Self::ExecuteContract {
                 sender,
@@ -718,12 +857,13 @@ impl Msg {
                 // produces a document the chain will not accept.
                 let inner: Value = serde_json::from_slice(msg)
                     .unwrap_or_else(|_| Value::Object(Default::default()));
-                object_omit_empty([
-                    ("contract", json!(contract)),
-                    ("funds", amino_coins(funds)),
-                    ("msg", inner),
-                    ("sender", json!(sender)),
-                ])
+                let mut value =
+                    object_omit_empty([("contract", json!(contract)), ("sender", json!(sender))]);
+                // wasmd marks funds amino.dont_omitempty: `[]` when nothing is attached, as
+                // CosmJS's wasm converter writes it. The message is required, even if `{}`.
+                always(&mut value, "funds", amino_coins(funds));
+                always(&mut value, "msg", inner);
+                value
             }
             Self::SwapExactAmountIn {
                 sender,
@@ -963,7 +1103,10 @@ impl Msg {
                 amount,
             } => {
                 check(from_address, prefix)?;
-                check(to_address, prefix)?;
+                // An account, or a module-derived address on this chain (a contract, an
+                // interchain account, a group policy), which is 32 bytes.
+                zunia_kernel::validate_contract_address(to_address, prefix)
+                    .map_err(|_| CosmosError::Address)?;
                 if amount.is_empty() {
                     return Err(CosmosError::Amount);
                 }
@@ -1051,6 +1194,14 @@ fn amino_coin(coin: &Coin) -> Value {
 
 fn amino_coins(coins: &[Coin]) -> Value {
     Value::Array(coins.iter().map(amino_coin).collect())
+}
+
+/// Adds a field Go never omits (`amino.dont_omitempty`, or a non-nullable struct), even when it is
+/// empty. [`object_omit_empty`] would drop it.
+fn always(object: &mut Value, key: &str, value: Value) {
+    if let Value::Object(map) = object {
+        map.insert(key.to_owned(), value);
+    }
 }
 
 #[cfg(test)]
@@ -1184,6 +1335,62 @@ mod tests {
             to_canonical_string(&split().encode_amino()),
             r#"{"type":"osmosis/poolmanager/split-amount-in","value":{"routes":[{"pools":[{"pool_id":"3498","token_out_denom":"$OUT"}],"token_in_amount":"5970000"},{"pools":[{"pool_id":"3586","token_out_denom":"$OUT"}],"token_in_amount":"3980000"}],"sender":"osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8","token_in_denom":"uosmo","token_out_min_amount":"350000"}}"#
                 .replace("$OUT", OUT)
+        );
+    }
+
+    #[test]
+    fn amino_vote_option_is_the_enum_number() {
+        // The chain's amino encoder writes enums as integers, as CosmJS's gov converter does.
+        // Real cosmoshub-4 vote CB4C6346EF211E67…: its signature verifies over "option":3 and
+        // not over "option":"VOTE_OPTION_NO".
+        let vote = Msg::Vote {
+            proposal_id: 1058,
+            voter: "cosmos1r69v2p02qm6sh5ppjrvurxz0vzyh23dvxyssvx".to_owned(),
+            option: VoteOption::No,
+        };
+        assert_eq!(
+            to_canonical_string(&vote.encode_amino()),
+            r#"{"type":"cosmos-sdk/MsgVote","value":{"option":3,"proposal_id":"1058","voter":"cosmos1r69v2p02qm6sh5ppjrvurxz0vzyh23dvxyssvx"}}"#
+        );
+    }
+
+    #[test]
+    fn amino_transfer_always_carries_timeout_height() {
+        // Non-nullable, and the chain's encoder never omits it: a timestamp-only transfer signs
+        // "timeout_height":{}. Real cosmoshub-4 transfer B812E67C6ECC96EB… verifies only so.
+        let transfer = Msg::IbcTransfer {
+            source_port: "transfer".to_owned(),
+            source_channel: "channel-391".to_owned(),
+            token: Coin::new(
+                "cosmosvaloper1y0us8xvsvfvqkk9c6nt5cfyu5au5tww2ztve7q/122055",
+                "300000000",
+            )
+            .unwrap(),
+            sender: "cosmos1rdg7ec7a8men3dvxnh5afkpdxcevqkrk5rh4ke".to_owned(),
+            receiver: "stride1rdg7ec7a8men3dvxnh5afkpdxcevqkrkhghfz4".to_owned(),
+            timeout_height: Height::default(),
+            timeout_timestamp: 1_791_291_799_583_000_000,
+            memo: String::new(),
+        };
+        assert_eq!(
+            to_canonical_string(&transfer.encode_amino()),
+            r#"{"type":"cosmos-sdk/MsgTransfer","value":{"receiver":"stride1rdg7ec7a8men3dvxnh5afkpdxcevqkrkhghfz4","sender":"cosmos1rdg7ec7a8men3dvxnh5afkpdxcevqkrk5rh4ke","source_channel":"channel-391","source_port":"transfer","timeout_height":{},"timeout_timestamp":"1791291799583000000","token":{"amount":"300000000","denom":"cosmosvaloper1y0us8xvsvfvqkk9c6nt5cfyu5au5tww2ztve7q/122055"}}}"#
+        );
+    }
+
+    #[test]
+    fn amino_contract_call_always_carries_funds() {
+        // wasmd marks funds amino.dont_omitempty, and CosmJS's wasm converter always writes the
+        // array: a call with no coins attached signs "funds":[].
+        let call = Msg::ExecuteContract {
+            sender: OSMO_SENDER.to_owned(),
+            contract: "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs".to_owned(),
+            msg: br#"{"recover":{}}"#.to_vec(),
+            funds: vec![],
+        };
+        assert_eq!(
+            to_canonical_string(&call.encode_amino()),
+            r#"{"type":"wasm/MsgExecuteContract","value":{"contract":"osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs","funds":[],"msg":{"recover":{}},"sender":"osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8"}}"#
         );
     }
 
@@ -1659,7 +1866,7 @@ mod tests {
         };
         assert_eq!(
             to_canonical_string(&msg.encode_amino()),
-            r#"{"type":"cosmos-sdk/MsgVote","value":{"option":"VOTE_OPTION_NO_WITH_VETO","proposal_id":"848","voter":"cosmos1abc"}}"#
+            r#"{"type":"cosmos-sdk/MsgVote","value":{"option":4,"proposal_id":"848","voter":"cosmos1abc"}}"#
         );
         // Proto encodes the enum as its integer value.
         let fields = crate::proto::decode_fields(&msg.encode_proto()).unwrap();
@@ -1706,13 +1913,12 @@ mod tests {
         );
     }
 
-    /// Amino omits zero timeouts, protobuf does not, and the asymmetry is deliberate.
+    /// A zero `timeout_height` is present in both encodings; a zero timestamp in neither.
     ///
-    /// Amino follows Go's `json.Marshal` with `omitempty`, so an all-zero `timeout_height`
-    /// disappears. Protobuf follows the `(gogoproto.nullable) = false` annotation, so the
-    /// field is always present even when it encodes to zero bytes. Both halves are pinned to
-    /// CosmJS in `tests/golden_vectors.rs`; this test states the intent so the next reader
-    /// does not "fix" one side into agreement with the other.
+    /// `timeout_height` is `(gogoproto.nullable) = false` and `(amino.dont_omitempty) = true`, so
+    /// protobuf writes an empty message and Amino writes `{}`. `timeout_timestamp` is a plain
+    /// uint64 and is omitted at zero in both. Pinned to real cosmoshub-4 signatures in
+    /// `tests/chain_verified.rs`.
     #[test]
     fn ibc_transfer_timeout_omission_differs_between_amino_and_proto() {
         let msg = Msg::IbcTransfer {
@@ -1727,7 +1933,7 @@ mod tests {
         };
         assert_eq!(
             to_canonical_string(&msg.encode_amino()),
-            r#"{"type":"cosmos-sdk/MsgTransfer","value":{"receiver":"addr_safro1xyz","sender":"cosmos1abc","source_channel":"channel-141","source_port":"transfer","token":{"amount":"1000000","denom":"uatom"}}}"#
+            r#"{"type":"cosmos-sdk/MsgTransfer","value":{"receiver":"addr_safro1xyz","sender":"cosmos1abc","source_channel":"channel-141","source_port":"transfer","timeout_height":{},"token":{"amount":"1000000","denom":"uatom"}}}"#
         );
         let fields = crate::proto::decode_fields(&msg.encode_proto()).unwrap();
         assert_eq!(

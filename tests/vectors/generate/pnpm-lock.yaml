@@ -20,6 +20,9 @@ importers:
       '@cosmjs/proto-signing':
         specifier: ^0.33.0
         version: 0.33.1
+      '@cosmjs/stargate':
+        specifier: 0.32.3
+        version: 0.32.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       '@solana/web3.js':
         specifier: ^1
         version: 1.98.4(bufferutil@4.1.0)(typescript@7.0.2)(utf-8-validate@6.0.6)

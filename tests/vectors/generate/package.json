@@ -17,6 +17,7 @@
     "@cosmjs/crypto": "^0.33.0",
     "@cosmjs/encoding": "^0.33.0",
     "@cosmjs/proto-signing": "^0.33.0",
+    "@cosmjs/stargate": "0.32.3",
     "@solana/web3.js": "^1",
     "bip39": "^3",
     "bs58": "^6",

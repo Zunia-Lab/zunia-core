@@ -823,8 +823,8 @@ mod tests {
             }),
             "msg_vote" => json!({
                 // The short spelling on purpose: the bridge is permissive on input and
-                // canonical on output, so the Amino document below must still carry
-                // "VOTE_OPTION_NO_WITH_VETO".
+                // canonical on output, so the Amino document below must still carry option 4,
+                // the number the chain's encoder writes.
                 "proposal_id": "848",
                 "voter": from,
                 "option": "no_with_veto",
@@ -878,6 +878,39 @@ mod tests {
                 ],
                 "token_in_denom": "uosmo",
                 "token_out_min_amount": "350000",
+            }),
+            // The memo, "rent & food <3>", comes from the case and is escaped in Amino only.
+            "msg_send_memo_html" => json!({
+                "from_address": from,
+                "to_address": RECIPIENT,
+                "amount": [{ "denom": "uatom", "amount": "1" }],
+            }),
+            "msg_send_to_32_byte" => json!({
+                "from_address": from,
+                "to_address": "cosmos1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3s4mk53k",
+                "amount": [{ "denom": "uatom", "amount": "1000000" }],
+            }),
+            "msg_execute_contract_32_no_funds" => json!({
+                "sender": osmo,
+                "contract": "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs",
+                // base64 of {"recover":{}}.
+                "msg": "eyJyZWNvdmVyIjp7fX0=",
+                "funds": [],
+            }),
+            "msg_execute_contract_nft_html" => json!({
+                "sender": osmo,
+                "contract": "osmo19vxk34pf2uqf8warhsgqswa5sqyxnm493lxr4808gyy2rjs5yajq0c4l8v",
+                // base64 of {"transfer_nft":{"recipient":"osmo1jrkmdcwgq94uaamx6zax2luewlhf7u4k5r4pqs","token_id":"rock & roll"}}.
+                "msg": "eyJ0cmFuc2Zlcl9uZnQiOnsicmVjaXBpZW50Ijoib3NtbzFqcmttZGN3Z3E5NHVhYW14NnpheDJsdWV3bGhmN3U0azVyNHBxcyIsInRva2VuX2lkIjoicm9jayAmIHJvbGwifX0=",
+                "funds": [],
+            }),
+            "msg_transfer_timestamp_only" => json!({
+                "source_port": "transfer",
+                "source_channel": "channel-141",
+                "token": { "denom": "uatom", "amount": "1000000" },
+                "sender": from,
+                "receiver": osmo,
+                "timeout_timestamp": "1791400000000000000",
             }),
             other => panic!("no envelope for vector {other}"),
         };
@@ -1025,6 +1058,11 @@ mod tests {
             "msg_swap_exact_amount_in",
             "msg_swap_exact_amount_in_multi_hop",
             "msg_split_route_swap_exact_amount_in",
+            "msg_send_memo_html",
+            "msg_send_to_32_byte",
+            "msg_execute_contract_32_no_funds",
+            "msg_execute_contract_nft_html",
+            "msg_transfer_timestamp_only",
         ] {
             let found = case(&vectors, name);
             let msgs = envelope(name, &vectors);

@@ -21,16 +21,13 @@
 //!
 //! # HTML escaping
 //!
-//! Go's `encoding/json` escapes `<`, `>` and `&` as `\u003c`, `\u003e` and `\u0026`.
-//! `JSON.stringify` in JavaScript does not. This crate follows the JavaScript behaviour,
-//! matching CosmJS and Keplr, because that is what production wallets sign with today and
-//! therefore what chains demonstrably accept.
+//! Go's `encoding/json`, which builds the document the chain verifies (legacy amino's
+//! `MustSortJSON` and x/tx's aminojson encoder alike), escapes `<`, `>` and `&` as `\u003c`,
+//! `\u003e` and `\u0026`, and U+2028 and U+2029 as `\u2028` and `\u2029`. CosmJS's
+//! `serializeSignDoc` applies the first three (`escapeCharacters`) and Keplr does the same. A memo
+//! or a contract message carrying one of them, signed unescaped, verifies against nothing.
 //!
-//! This divergence only appears in free-text fields, in practice the memo and a CosmWasm
-//! message body. It is asserted in [`tests::html_characters_are_not_escaped`] so the choice is
-//! explicit rather than accidental, and
-//! `docs/amino-open-questions.md` tracks confirming it against a live chain in the integration
-//! suite before mainnet.
+//! Asserted in [`tests::html_characters_are_escaped_like_the_chain`].
 
 use serde_json::{Map, Value};
 
@@ -89,11 +86,12 @@ fn write_canonical(value: &Value, out: &mut String) {
     }
 }
 
-/// Writes a JSON string using `JSON.stringify` escaping rules.
+/// Writes a JSON string the way Go's `encoding/json` does.
 ///
-/// Escapes only what the JSON grammar requires: quote, backslash, and control characters below
-/// 0x20, with the short forms for backspace, form feed, newline, carriage return and tab.
-/// Everything else, including `<`, `>`, `&` and all non-ASCII, is emitted literally as UTF-8.
+/// The JSON grammar's escapes (quote, backslash, control characters below 0x20, with the short
+/// forms for backspace, form feed, newline, carriage return and tab), plus Go's HTML escapes for
+/// `<`, `>` and `&` and its escapes for U+2028 and U+2029. All other non-ASCII is emitted
+/// literally as UTF-8.
 fn write_json_string(value: &str, out: &mut String) {
     out.push('"');
     for ch in value.chars() {
@@ -105,6 +103,11 @@ fn write_json_string(value: &str, out: &mut String) {
             '\t' => out.push_str("\\t"),
             '\u{08}' => out.push_str("\\b"),
             '\u{0c}' => out.push_str("\\f"),
+            '<' => out.push_str("\\u003c"),
+            '>' => out.push_str("\\u003e"),
+            '&' => out.push_str("\\u0026"),
+            '\u{2028}' => out.push_str("\\u2028"),
+            '\u{2029}' => out.push_str("\\u2029"),
             c if (c as u32) < 0x20 => {
                 out.push_str(&format!("\\u{:04x}", c as u32));
             }
@@ -222,12 +225,32 @@ mod tests {
     }
 
     #[test]
-    fn html_characters_are_not_escaped() {
-        // Pins the CosmJS and Keplr behaviour. Go's encoding/json would emit \u003c, \u003e
-        // and \u0026 here. See the module documentation: this is a deliberate choice, and the
-        // divergence is tracked for confirmation against a live chain.
+    fn html_characters_are_escaped_like_the_chain() {
+        // Go's encoding/json, which builds the document the chain verifies, writes these three
+        // escaped, and CosmJS's serializeSignDoc (escapeCharacters) and Keplr match it. A memo
+        // like "rent & food" signed unescaped verifies against nothing.
+        let bs = char::from(0x5c_u8);
         let value = json!({ "memo": "a<b>c&d" });
-        assert_eq!(to_canonical_string(&value), r#"{"memo":"a<b>c&d"}"#);
+        assert_eq!(
+            to_canonical_string(&value),
+            format!(r#"{{"memo":"a{bs}u003cb{bs}u003ec{bs}u0026d"}}"#)
+        );
+    }
+
+    #[test]
+    fn line_and_paragraph_separators_are_escaped_like_go() {
+        // Go escapes U+2028 and U+2029 in every string it marshals. CosmJS does not, so a memo
+        // carrying one fails there too; matching the chain is what counts.
+        let bs = char::from(0x5c_u8);
+        let (ls, ps) = (
+            char::from_u32(0x2028).unwrap(),
+            char::from_u32(0x2029).unwrap(),
+        );
+        let value = json!({ "memo": format!("a{ls}b{ps}c") });
+        assert_eq!(
+            to_canonical_string(&value),
+            format!(r#"{{"memo":"a{bs}u2028b{bs}u2029c"}}"#)
+        );
     }
 
     #[test]

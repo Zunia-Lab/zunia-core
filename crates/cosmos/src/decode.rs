@@ -31,9 +31,11 @@ use serde_json::Value;
 use crate::amount::Coin;
 use crate::error::{CosmosError, Result};
 use crate::msg::{
-    describe_hops, describe_split, route_output, split_input, split_output,
-    validate_split_route_swap_exact_amount_in, validate_swap_exact_amount_in, SwapAmountInRoute,
-    SwapAmountInSplitRoute, VoteOption,
+    describe_hops, describe_out_hops, describe_out_split, describe_split, out_route_input,
+    route_output, split_input, split_out_total, split_output,
+    validate_split_route_swap_exact_amount_in, validate_split_route_swap_exact_amount_out,
+    validate_swap_exact_amount_in, validate_swap_exact_amount_out, SwapAmountInRoute,
+    SwapAmountInSplitRoute, SwapAmountOutRoute, SwapAmountOutSplitRoute, VoteOption,
 };
 use crate::proto::{decode_fields, find_all, find_unique_field, require_unique};
 
@@ -102,6 +104,23 @@ pub enum DecodedMsg {
         routes: Vec<SwapAmountInSplitRoute>,
         token_in_denom: String,
         token_out_min_amount: String,
+    },
+    /// `osmosis.poolmanager.v1beta1.MsgSwapExactAmountOut`: an exact amount out, for at most a
+    /// ceiling in. What other Osmosis front ends sign to buy a precise amount.
+    SwapExactAmountOut {
+        sender: String,
+        /// The hops in order; the first one's `token_in_denom` is what the sender spends.
+        routes: Vec<SwapAmountOutRoute>,
+        /// The most the swap may spend. The only price limit the message carries.
+        token_in_max_amount: String,
+        token_out: Option<Coin>,
+    },
+    /// `osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountOut`.
+    SplitRouteSwapExactAmountOut {
+        sender: String,
+        routes: Vec<SwapAmountOutSplitRoute>,
+        token_out_denom: String,
+        token_in_max_amount: String,
     },
     /// A message this build cannot decode.
     ///
@@ -206,6 +225,31 @@ impl DecodedMsg {
                 split_output(routes),
                 describe_split(routes)
             ),
+            // The ceiling first: it is what a user must check, as the floor is for exact-in.
+            Self::SwapExactAmountOut {
+                routes,
+                token_in_max_amount,
+                token_out,
+                ..
+            } => format!(
+                "Swap at most {token_in_max_amount} {} for exactly {} through {}",
+                out_route_input(routes),
+                describe_coin(token_out),
+                describe_out_hops(routes)
+            ),
+            Self::SplitRouteSwapExactAmountOut {
+                routes,
+                token_out_denom,
+                token_in_max_amount,
+                ..
+            } => format!(
+                "Swap at most {token_in_max_amount} {} for exactly {} {token_out_denom} through {}",
+                routes
+                    .first()
+                    .map_or("an unreadable denom", |leg| out_route_input(&leg.pools)),
+                split_out_total(routes),
+                describe_out_split(routes)
+            ),
             // Deliberately alarming. The user is being asked to authorise something the wallet
             // cannot read, and the prompt must say so rather than soften it.
             Self::Unknown {
@@ -247,7 +291,9 @@ impl DecodedMsg {
                 sender, contract, ..
             } => vec![sender, contract],
             Self::SwapExactAmountIn { sender, .. }
-            | Self::SplitRouteSwapExactAmountIn { sender, .. } => vec![sender],
+            | Self::SplitRouteSwapExactAmountIn { sender, .. }
+            | Self::SwapExactAmountOut { sender, .. }
+            | Self::SplitRouteSwapExactAmountOut { sender, .. } => vec![sender],
             Self::Unknown { .. } => Vec::new(),
         }
     }
@@ -267,6 +313,11 @@ pub struct DecodedTx {
     pub account_number: u64,
     pub sequence: u64,
     pub msgs: Vec<DecodedMsg>,
+    /// Each message's `Any.type_url`, in the order of [`Self::msgs`], whether or not the message
+    /// was understood. A known message's variant implies its type, but not which one: gov
+    /// v1beta1 and v1 votes decode to the same [`DecodedMsg::Vote`], and the prompt names what the
+    /// chain will run.
+    pub type_urls: Vec<String>,
     pub fee: Vec<Coin>,
     pub gas_limit: u64,
     pub memo: String,
@@ -333,8 +384,11 @@ pub fn decode_direct_sign_doc(sign_bytes: &[u8]) -> Result<DecodedTx> {
         .unwrap_or(0);
 
     let mut msgs = Vec::new();
+    let mut type_urls = Vec::new();
     for any in find_all(&body, 1) {
-        msgs.push(decode_any(any.as_bytes()?)?);
+        let (type_url, msg) = decode_any(any.as_bytes()?)?;
+        type_urls.push(type_url);
+        msgs.push(msg);
     }
     if msgs.is_empty() {
         return Err(CosmosError::SignDoc);
@@ -383,6 +437,7 @@ pub fn decode_direct_sign_doc(sign_bytes: &[u8]) -> Result<DecodedTx> {
         account_number,
         sequence,
         msgs,
+        type_urls,
         fee,
         gas_limit,
         memo,
@@ -391,12 +446,12 @@ pub fn decode_direct_sign_doc(sign_bytes: &[u8]) -> Result<DecodedTx> {
     })
 }
 
-/// Decodes a `google.protobuf.Any` holding a message.
+/// Decodes a `google.protobuf.Any` holding a message, and returns its type URL with it.
 ///
 /// A second `type_url` or `value` is an error for the whole document rather than an unknown
 /// message: with two type URLs the prompt would name one message while the chain ran the other,
 /// and there is no honest name to put on the result.
-fn decode_any(any_bytes: &[u8]) -> Result<DecodedMsg> {
+fn decode_any(any_bytes: &[u8]) -> Result<(String, DecodedMsg)> {
     let fields = decode_fields(any_bytes)?;
     let type_url = find_unique_field(&fields, 1)?
         .ok_or(CosmosError::Decode)?
@@ -411,10 +466,11 @@ fn decode_any(any_bytes: &[u8]) -> Result<DecodedMsg> {
     // is itself worth showing.
     let decoded = decode_known(&type_url, &value).unwrap_or(None);
 
-    Ok(decoded.unwrap_or(DecodedMsg::Unknown {
-        type_url,
+    let msg = decoded.unwrap_or_else(|| DecodedMsg::Unknown {
+        type_url: type_url.clone(),
         byte_length: value.len(),
-    }))
+    });
+    Ok((type_url, msg))
 }
 
 /// Decodes the body of a message whose type URL this build knows.
@@ -557,6 +613,32 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
                 token_out_min_amount: string_at(4)?,
             }
         }
+        "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountOut" => {
+            let mut routes = Vec::new();
+            for hop in find_all(&fields, 2) {
+                routes.push(decode_out_hop(hop.as_bytes()?)?);
+            }
+            DecodedMsg::SwapExactAmountOut {
+                sender: string_at(1)?,
+                routes,
+                // The field most worth forging in an exact-out swap: a modest ceiling first, a
+                // ruinous one second.
+                token_in_max_amount: string_at(3)?,
+                token_out: coin_at(4)?,
+            }
+        }
+        "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountOut" => {
+            let mut routes = Vec::new();
+            for leg in find_all(&fields, 2) {
+                routes.push(decode_out_split_leg(leg.as_bytes()?)?);
+            }
+            DecodedMsg::SplitRouteSwapExactAmountOut {
+                sender: string_at(1)?,
+                routes,
+                token_out_denom: string_at(3)?,
+                token_in_max_amount: string_at(4)?,
+            }
+        }
         _ => return Ok(None),
     };
 
@@ -602,15 +684,21 @@ fn is_renderable_address(address: &str) -> bool {
     !address.is_empty() && address.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
 }
 
-/// Whether every address that must be a local-chain account actually decodes as bech32.
+/// Whether every address that must be on the chain being signed for actually decodes as bech32.
 ///
-/// Applied only to fields whose proto contract is an account or validator address on the chain
-/// being signed for. A field that fails this could never execute on chain, so describing it
-/// confidently would be describing a transaction that cannot happen, while the bytes the user
-/// signed might still be replayable somewhere the wallet did not check.
+/// Applied only to fields whose proto contract is an address on that chain: an account or a
+/// validator, which is 20 bytes, or a send's recipient or a contract, which may also be a
+/// 32-byte module-derived address under the signer's prefix. A field that fails this could never
+/// execute on chain, so describing it confidently would be describing a transaction that cannot
+/// happen, while the bytes the user signed might still be replayable somewhere the wallet did not
+/// check.
 fn local_addresses_are_bech32(msg: &DecodedMsg) -> bool {
-    let must_be_bech32: Vec<&str> = match msg {
-        DecodedMsg::Send { from, to, .. } => vec![from, to],
+    // `accounts` are keyed accounts and validators: 20 bytes, always. `derived` may also be a
+    // module-derived address, which is 32 bytes: a CosmWasm contract, an interchain account, a
+    // group policy. The first account is the signer, and a derived address must carry its
+    // prefix, since a contract on another chain cannot be called or paid from this one.
+    let (accounts, derived): (Vec<&str>, Vec<&str>) = match msg {
+        DecodedMsg::Send { from, to, .. } => (vec![from], vec![to]),
         DecodedMsg::Delegate {
             delegator,
             validator,
@@ -624,28 +712,42 @@ fn local_addresses_are_bech32(msg: &DecodedMsg) -> bool {
         | DecodedMsg::ClaimRewards {
             delegator,
             validator,
-        } => vec![delegator, validator],
+        } => (vec![delegator, validator], Vec::new()),
         DecodedMsg::Redelegate {
             delegator,
             from_validator,
             to_validator,
             ..
-        } => vec![delegator, from_validator, to_validator],
-        DecodedMsg::Vote { voter, .. } => vec![voter],
+        } => (vec![delegator, from_validator, to_validator], Vec::new()),
+        DecodedMsg::Vote { voter, .. } => (vec![voter], Vec::new()),
         DecodedMsg::ExecuteContract {
             sender, contract, ..
-        } => vec![sender, contract],
+        } => (vec![sender], vec![contract]),
         // The sender is a local account, but the receiver may legitimately be an address on
         // another chain entirely, so only the sender is checked here.
-        DecodedMsg::IbcTransfer { sender, .. } => vec![sender],
+        DecodedMsg::IbcTransfer { sender, .. } => (vec![sender], Vec::new()),
         DecodedMsg::SwapExactAmountIn { sender, .. }
-        | DecodedMsg::SplitRouteSwapExactAmountIn { sender, .. } => vec![sender],
-        DecodedMsg::Unknown { .. } => Vec::new(),
+        | DecodedMsg::SplitRouteSwapExactAmountIn { sender, .. }
+        | DecodedMsg::SwapExactAmountOut { sender, .. }
+        | DecodedMsg::SplitRouteSwapExactAmountOut { sender, .. } => (vec![sender], Vec::new()),
+        DecodedMsg::Unknown { .. } => (Vec::new(), Vec::new()),
     };
 
-    must_be_bech32
+    if !accounts
         .iter()
         .all(|address| zunia_kernel::decode_bech32(address).is_ok())
+    {
+        return false;
+    }
+    match accounts
+        .first()
+        .map(|signer| zunia_kernel::decode_bech32(signer))
+    {
+        Some(Ok(signer)) => derived.iter().all(|address| {
+            zunia_kernel::validate_contract_address(address, &signer.prefix).is_ok()
+        }),
+        _ => derived.is_empty(),
+    }
 }
 
 fn is_complete(msg: &DecodedMsg) -> bool {
@@ -690,6 +792,23 @@ fn is_complete(msg: &DecodedMsg) -> bool {
             validate_split_route_swap_exact_amount_in(routes, token_in_denom, token_out_min_amount)
                 .is_ok()
         }
+        DecodedMsg::SwapExactAmountOut {
+            routes,
+            token_in_max_amount,
+            token_out,
+            ..
+        } => token_out.as_ref().is_some_and(|token_out| {
+            validate_swap_exact_amount_out(routes, token_in_max_amount, token_out).is_ok()
+        }),
+        DecodedMsg::SplitRouteSwapExactAmountOut {
+            routes,
+            token_out_denom,
+            token_in_max_amount,
+            ..
+        } => {
+            validate_split_route_swap_exact_amount_out(routes, token_out_denom, token_in_max_amount)
+                .is_ok()
+        }
         // Already the honest answer.
         DecodedMsg::Unknown { .. } => true,
     };
@@ -723,6 +842,37 @@ fn decode_split_leg(bytes: &[u8]) -> Result<SwapAmountInSplitRoute> {
     Ok(SwapAmountInSplitRoute {
         pools,
         token_in_amount: find_unique_field(&fields, 2)?
+            .map(|v| v.as_string())
+            .transpose()?
+            .unwrap_or_default(),
+    })
+}
+
+/// `osmosis.poolmanager.v1beta1.SwapAmountOutRoute`: pool_id 1, token_in_denom 2.
+fn decode_out_hop(bytes: &[u8]) -> Result<SwapAmountOutRoute> {
+    let fields = decode_fields(bytes)?;
+    Ok(SwapAmountOutRoute {
+        pool_id: find_unique_field(&fields, 1)?
+            .map(|v| v.as_varint())
+            .transpose()?
+            .unwrap_or(0),
+        token_in_denom: find_unique_field(&fields, 2)?
+            .map(|v| v.as_string())
+            .transpose()?
+            .unwrap_or_default(),
+    })
+}
+
+/// `osmosis.poolmanager.v1beta1.SwapAmountOutSplitRoute`: pools 1, token_out_amount 2.
+fn decode_out_split_leg(bytes: &[u8]) -> Result<SwapAmountOutSplitRoute> {
+    let fields = decode_fields(bytes)?;
+    let mut pools = Vec::new();
+    for hop in find_all(&fields, 1) {
+        pools.push(decode_out_hop(hop.as_bytes()?)?);
+    }
+    Ok(SwapAmountOutSplitRoute {
+        pools,
+        token_out_amount: find_unique_field(&fields, 2)?
             .map(|v| v.as_string())
             .transpose()?
             .unwrap_or_default(),
@@ -1196,6 +1346,73 @@ mod tests {
         assert_eq!(decoded.msgs.len(), 2);
         assert!(decoded.summaries()[0].starts_with("Claim staking rewards"));
         assert!(decoded.summaries()[1].starts_with("Delegate"));
+    }
+
+    #[test]
+    fn every_message_keeps_its_type_url_in_order() {
+        // The prompt names the message the chain will run, and the variant alone cannot say
+        // which: a gov v1 vote and a v1beta1 vote decode to the same Vote. Unknown messages keep
+        // theirs too, the demoted ones included, so a refusal can say what it refused.
+        let mut send = ProtoWriter::new();
+        send.string(1, FROM)
+            .string(2, TO)
+            .repeated_message(3, &[coin_bytes("uatom", "1")]);
+        let mut vote = ProtoWriter::new();
+        vote.uint64(1, 848).string(2, FROM).int32(3, 1);
+        let mut no_recipient = ProtoWriter::new();
+        no_recipient
+            .string(1, FROM)
+            .repeated_message(3, &[coin_bytes("uatom", "1")]);
+        let doc = hand_built_doc(vec![
+            any_of("/cosmos.bank.v1beta1.MsgSend", send.as_bytes()),
+            any_of("/cosmos.gov.v1.MsgVote", vote.as_bytes()),
+            any_of("/cosmos.authz.v1beta1.MsgGrant", &[1, 2, 3]),
+            any_of("/cosmos.bank.v1beta1.MsgSend", no_recipient.as_bytes()),
+        ]);
+
+        let decoded = decode_direct_sign_doc(&doc).unwrap();
+        assert_eq!(
+            decoded.type_urls,
+            vec![
+                "/cosmos.bank.v1beta1.MsgSend",
+                "/cosmos.gov.v1.MsgVote",
+                "/cosmos.authz.v1beta1.MsgGrant",
+                "/cosmos.bank.v1beta1.MsgSend",
+            ]
+        );
+        assert_eq!(decoded.type_urls.len(), decoded.msgs.len());
+        assert!(matches!(decoded.msgs[1], DecodedMsg::Vote { .. }));
+        for index in [2, 3] {
+            match &decoded.msgs[index] {
+                DecodedMsg::Unknown { type_url, .. } => {
+                    assert_eq!(type_url, &decoded.type_urls[index]);
+                }
+                other => panic!("message {index} decoded as {other:?}"),
+            }
+        }
+
+        // And a transaction the wallet built itself reports the builder's own type URLs.
+        let built = round_trip(
+            vec![
+                Msg::WithdrawDelegatorReward {
+                    delegator_address: FROM.to_owned(),
+                    validator_address: VALOPER.to_owned(),
+                },
+                Msg::Vote {
+                    proposal_id: 848,
+                    voter: FROM.to_owned(),
+                    option: VoteOption::Yes,
+                },
+            ],
+            "",
+        );
+        assert_eq!(
+            built.type_urls,
+            vec![
+                "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward",
+                "/cosmos.gov.v1beta1.MsgVote",
+            ]
+        );
     }
 
     #[test]
@@ -2211,5 +2428,229 @@ mod tests {
         }
         .addresses()
         .is_empty());
+    }
+
+    /* ------------------------------------------------------------------------------------ *
+     * 32-byte addresses: CosmWasm contracts and other module-derived accounts
+     * ------------------------------------------------------------------------------------ */
+
+    /// Osmosis crosschain-swaps, a real contract. wasmd derives every instantiated contract's
+    /// address as 32 bytes; only an account is 20.
+    const XCS: &str = "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs";
+
+    fn execute_bytes(sender: &str, contract: &str, msg: &[u8]) -> Vec<u8> {
+        let mut writer = ProtoWriter::new();
+        writer.string(1, sender).string(2, contract).bytes(3, msg);
+        writer.into_bytes()
+    }
+
+    #[test]
+    fn a_call_to_a_32_byte_contract_is_understood() {
+        // The regression: the contract was checked with the 20-byte account rule, so every real
+        // contract call (a crosschain swap, its recovery, an NFT transfer) came back Unknown and
+        // was refused unless the user had turned blind signing on.
+        let decoded = decode_one(
+            "/cosmwasm.wasm.v1.MsgExecuteContract",
+            &execute_bytes(OSMO, XCS, br#"{"recover":{}}"#),
+        );
+        assert_eq!(
+            decoded,
+            DecodedMsg::ExecuteContract {
+                sender: OSMO.to_owned(),
+                contract: XCS.to_owned(),
+                msg: Some(serde_json::json!({ "recover": {} })),
+                action: Some("recover".to_owned()),
+                funds: vec![],
+            }
+        );
+        assert_eq!(decoded.summary(), format!("Execute \"recover\" on {XCS}"));
+    }
+
+    #[test]
+    fn the_builder_and_the_decoder_agree_on_a_32_byte_contract() {
+        // The builder has accepted 32-byte contracts since a77d04b; the decoder must describe
+        // what the builder builds.
+        let msg = Msg::ExecuteContract {
+            sender: OSMO.to_owned(),
+            contract: XCS.to_owned(),
+            msg: br#"{"osmosis_swap":{"output_denom":"uatom"}}"#.to_vec(),
+            funds: vec![Coin::new("uosmo", "1000000").unwrap()],
+        };
+        assert!(msg.validate_addresses("osmo").is_ok());
+        let decoded = round_trip(vec![msg.clone()], "");
+        assert!(
+            decoded.is_safe_to_sign_without_blind_signing(),
+            "got {:?}",
+            decoded.msgs
+        );
+        assert_eq!(decoded.summaries()[0], msg.summary());
+    }
+
+    #[test]
+    fn a_send_to_a_32_byte_address_is_understood() {
+        // A contract, an interchain account or a group policy receiving funds: a DAO treasury,
+        // an ICA being topped up. Ordinary transfers, and 32 bytes on the same chain.
+        let mut writer = ProtoWriter::new();
+        writer
+            .string(1, OSMO)
+            .string(2, XCS)
+            .repeated_message(3, &[coin_bytes("uosmo", "1")]);
+        let decoded = decode_one("/cosmos.bank.v1beta1.MsgSend", writer.as_bytes());
+        assert!(!decoded.is_unknown(), "got {decoded:?}");
+    }
+
+    #[test]
+    fn a_contract_that_cannot_exist_on_the_signing_chain_is_not_understood() {
+        for (label, contract) in [
+            // The same 32 bytes under another chain's prefix.
+            (
+                "another chain's prefix",
+                "cosmos1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3s4mk53k",
+            ),
+            // Neither an account nor a derived address.
+            (
+                "31 bytes",
+                "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcn59qqmwg",
+            ),
+            (
+                "33 bytes",
+                "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3swy4t0nt",
+            ),
+            // One checksum character changed.
+            (
+                "a bad checksum",
+                "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxt",
+            ),
+        ] {
+            let decoded = decode_one(
+                "/cosmwasm.wasm.v1.MsgExecuteContract",
+                &execute_bytes(OSMO, contract, br#"{"recover":{}}"#),
+            );
+            assert!(
+                decoded.is_unknown(),
+                "a contract with {label} was understood"
+            );
+        }
+        // And the signer is still an account: a 32-byte sender is not one this wallet holds.
+        let decoded = decode_one(
+            "/cosmwasm.wasm.v1.MsgExecuteContract",
+            &execute_bytes(XCS, XCS, br#"{"recover":{}}"#),
+        );
+        assert!(decoded.is_unknown(), "a 32-byte sender was understood");
+    }
+
+    /* ------------------------------------------------------------------------------------ *
+     * Exact-out swaps
+     * ------------------------------------------------------------------------------------ */
+
+    const SWAP_OUT: &str = "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountOut";
+    const SPLIT_OUT: &str = "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountOut";
+
+    #[test]
+    fn a_dapp_exact_out_swap_decodes_into_a_named_swap() {
+        // osmojs 16.15 MsgSwapExactAmountOut.encode: buy 340000 of OUT through pools 1 then 3586,
+        // spending at most 10 OSMO.
+        let single = hex::decode("0a2b6f736d6f3139726c34636d32686d7238616679346b6c6470787a33666b61346a6775713061356d37646638120908011205756f736d6f124908821c12446962632f323733393446423039324432454343443536313233433734463336453443314639323630303143454144413943413937454136323242323546343145354542321a083130303030303030224e0a446962632f373934433744374633423835373731333837384133413139323732353146413641433145454535323034323443314636464146453942413236443437363133381206333430303030").unwrap();
+        let decoded = decode_one(SWAP_OUT, &single);
+        assert!(!decoded.is_unknown(), "got {decoded:?}");
+        assert_eq!(
+            decoded.summary(),
+            format!("Swap at most 10000000 uosmo for exactly 340000 {OUT} through pools 1 → 3586")
+        );
+        assert_eq!(decoded.addresses(), vec![OSMO]);
+
+        // osmojs MsgSplitRouteSwapExactAmountOut.encode: 210000 through 3498, 140000 through 3586.
+        let split = hex::decode("0a2b6f736d6f3139726c34636d32686d7238616679346b6c6470787a33666b61346a6775713061356d3764663812140a0a08aa1b1205756f736d6f120632313030303012140a0a08821c1205756f736d6f12063134303030301a446962632f3739344337443746334238353737313338373841334131393237323531464136414331454545353230343234433146364641464539424132364434373631333822083130303030303030").unwrap();
+        let decoded = decode_one(SPLIT_OUT, &split);
+        assert!(!decoded.is_unknown(), "got {decoded:?}");
+        assert_eq!(
+            decoded.summary(),
+            format!(
+                "Swap at most 10000000 uosmo for exactly 350000 {OUT} through 2 routes (pools 3498; 3586)"
+            )
+        );
+    }
+
+    fn out_swap_bytes(hops: &[Vec<u8>], ceilings: &[&str], token_out: Option<Vec<u8>>) -> Vec<u8> {
+        let mut writer = ProtoWriter::new();
+        writer.string(1, OSMO).repeated_message(2, hops);
+        for ceiling in ceilings {
+            writer.string(3, ceiling);
+        }
+        if let Some(coin) = token_out {
+            writer.message_always(4, &coin);
+        }
+        writer.into_bytes()
+    }
+
+    #[test]
+    fn an_exact_out_swap_the_chain_would_refuse_is_not_understood() {
+        // The wire shape of SwapAmountOutRoute is SwapAmountInRoute's: pool_id 1, a denom 2.
+        let route = || vec![hop_bytes(1, "uosmo")];
+        let out = || Some(coin_bytes(OUT, "340000"));
+        for (label, bytes) in [
+            ("a zero ceiling", out_swap_bytes(&route(), &["0"], out())),
+            ("no ceiling", out_swap_bytes(&route(), &[], out())),
+            // The chain keeps the last value: the prompt must not promise the first.
+            (
+                "a ceiling written twice",
+                out_swap_bytes(&route(), &["1", "999999999999"], out()),
+            ),
+            (
+                "nothing out",
+                out_swap_bytes(&route(), &["10000000"], Some(coin_bytes(OUT, "0"))),
+            ),
+            (
+                "no token_out",
+                out_swap_bytes(&route(), &["10000000"], None),
+            ),
+            ("no route", out_swap_bytes(&[], &["10000000"], out())),
+            (
+                "pool 0",
+                out_swap_bytes(&[hop_bytes(0, "uosmo")], &["10000000"], out()),
+            ),
+        ] {
+            assert!(
+                decode_one(SWAP_OUT, &bytes).is_unknown(),
+                "an exact-out swap with {label} was presented as understood"
+            );
+        }
+
+        let split = |legs: &[Vec<u8>], ceiling: &str| {
+            let mut writer = ProtoWriter::new();
+            writer
+                .string(1, OSMO)
+                .repeated_message(2, legs)
+                .string(3, OUT)
+                .string(4, ceiling);
+            writer.into_bytes()
+        };
+        let leg = |pool: u64, denom: &str, amount: &str| {
+            let mut writer = ProtoWriter::new();
+            writer
+                .repeated_message(1, &[hop_bytes(pool, denom)])
+                .string(2, amount);
+            writer.into_bytes()
+        };
+        for (label, bytes) in [
+            ("a zero ceiling", split(&[leg(3498, "uosmo", "1")], "0")),
+            (
+                "a leg that delivers nothing",
+                split(&[leg(3498, "uosmo", "0")], "10"),
+            ),
+            (
+                "legs spending different denoms",
+                split(&[leg(3498, "uosmo", "1"), leg(1, ATOM, "1")], "10"),
+            ),
+            (
+                "the same legs twice",
+                split(&[leg(3498, "uosmo", "1"), leg(3498, "uosmo", "2")], "10"),
+            ),
+        ] {
+            assert!(
+                decode_one(SPLIT_OUT, &bytes).is_unknown(),
+                "a split exact-out swap with {label} was presented as understood"
+            );
+        }
     }
 }

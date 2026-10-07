@@ -162,12 +162,54 @@ fn message_for(name: &str, addresses: &Value) -> Msg {
             token_in_denom: "uosmo".to_owned(),
             token_out_min_amount: "350000".to_owned(),
         },
+        "msg_send_memo_html" => Msg::Send {
+            from_address: from,
+            to_address: to,
+            amount: vec![Coin::new("uatom", "1").unwrap()],
+        },
+        "msg_send_to_32_byte" => Msg::Send {
+            from_address: from,
+            to_address: TO_32_BYTE.to_owned(),
+            amount: vec![Coin::new("uatom", "1000000").unwrap()],
+        },
+        "msg_execute_contract_32_no_funds" => Msg::ExecuteContract {
+            sender: osmo,
+            contract: XCS.to_owned(),
+            msg: br#"{"recover":{}}"#.to_vec(),
+            funds: vec![],
+        },
+        "msg_execute_contract_nft_html" => Msg::ExecuteContract {
+            sender: osmo,
+            contract: CW721.to_owned(),
+            msg: format!(
+                r#"{{"transfer_nft":{{"recipient":"{NFT_RECIPIENT}","token_id":"rock & roll"}}}}"#
+            )
+            .into_bytes(),
+            funds: vec![],
+        },
+        "msg_transfer_timestamp_only" => Msg::IbcTransfer {
+            source_port: "transfer".to_owned(),
+            source_channel: "channel-141".to_owned(),
+            token: Coin::new("uatom", "1000000").unwrap(),
+            sender: from,
+            receiver: osmo,
+            timeout_height: Height::default(),
+            timeout_timestamp: 1_791_400_000_000_000_000,
+            memo: String::new(),
+        },
         other => panic!(
             "vector \"{other}\" has no Rust counterpart; add it to message_for or remove it \
              from the generator"
         ),
     }
 }
+
+/// Osmosis crosschain-swaps, 32 bytes like every contract, and the same bytes on the hub.
+const XCS: &str = "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs";
+const TO_32_BYTE: &str = "cosmos1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3s4mk53k";
+/// The generator's CW721 collection, 32 bytes, and the account its NFT goes to.
+const CW721: &str = "osmo19vxk34pf2uqf8warhsgqswa5sqyxnm493lxr4808gyy2rjs5yajq0c4l8v";
+const NFT_RECIPIENT: &str = "osmo1jrkmdcwgq94uaamx6zax2luewlhf7u4k5r4pqs";
 
 fn signer_from(vectors: &Value) -> SignerData {
     SignerData {
@@ -208,7 +250,7 @@ fn every_vector_round_trips_through_proto_json() {
     }
 
     assert!(
-        checked >= 12,
+        checked >= 17,
         "expected the full vector set minus {NO_TIMEOUT}"
     );
 }
@@ -467,6 +509,61 @@ fn the_extension_example_swaps_parse_and_say_what_they_do() {
     assert_eq!(
         msgs_from_json(&msgs_to_json(&msgs).to_string()).unwrap(),
         msgs
+    );
+}
+
+#[test]
+fn a_send_to_a_32_byte_address_is_signed_only_on_its_own_chain() {
+    // A contract, an interchain account or a DAO treasury on the signing chain is a recipient
+    // like any other: 32 bytes with the chain's prefix. The same 32 bytes under another chain's
+    // prefix are an address this transaction cannot pay, and the prefix check that stops a
+    // cross-chain paste for an account must stop it here too.
+    let vectors = load();
+    let from = str_at(&vectors, &["key", "addresses", "cosmos"]);
+    let send_to = |to: &str| {
+        json!([{
+            "typeUrl": "/cosmos.bank.v1beta1.MsgSend",
+            "value": {
+                "from_address": from,
+                "to_address": to,
+                "amount": [{ "denom": "uatom", "amount": "1000000" }],
+            },
+        }])
+        .to_string()
+    };
+    let fee = fee_from_json(golden_fee_json()).unwrap();
+
+    let same_chain = UnsignedTx::new(
+        msgs_from_json(&send_to(TO_32_BYTE)).unwrap(),
+        fee.clone(),
+        "",
+    )
+    .unwrap();
+    assert_eq!(same_chain.validate("cosmos"), Ok(()));
+    let case = vectors["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == json!("msg_send_to_32_byte"))
+        .unwrap()
+        .clone();
+    let signer = signer_from(&vectors);
+    for (mode, key) in [
+        (SignMode::Direct, "direct"),
+        (SignMode::LegacyAminoJson, "amino"),
+    ] {
+        assert_eq!(
+            hex::encode(same_chain.sign_bytes(&signer, mode).unwrap()),
+            str_at(&case, &[key, "sign_bytes_hex"]),
+            "{key}: a 32-byte recipient from a hand-written envelope diverged from CosmJS"
+        );
+    }
+
+    let other_chain = UnsignedTx::new(msgs_from_json(&send_to(XCS)).unwrap(), fee, "").unwrap();
+    assert_eq!(
+        other_chain.validate("cosmos").unwrap_err(),
+        CosmosError::Address,
+        "32 bytes under osmo are not a recipient on the hub"
     );
 }
 

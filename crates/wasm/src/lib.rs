@@ -1228,6 +1228,13 @@ mod tests {
     const SWAP_OUT_DENOM: &str =
         "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
 
+    /// Osmosis crosschain-swaps, 32 bytes like every contract, and the same bytes on the hub,
+    /// which is the vectors' 32-byte recipient.
+    const XCS: &str = "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs";
+    const TO_32_BYTE: &str = "cosmos1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3s4mk53k";
+    /// The vectors' CW721 collection, 32 bytes.
+    const CW721: &str = "osmo19vxk34pf2uqf8warhsgqswa5sqyxnm493lxr4808gyy2rjs5yajq0c4l8v";
+
     fn vectors_path() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/vectors/cosmos-signing.json")
     }
@@ -1360,6 +1367,40 @@ mod tests {
                 "token_in_denom": "uosmo",
                 "token_out_min_amount": "350000",
             }),
+            // The memo, "rent & food <3>", comes from the case and is escaped in Amino only.
+            "msg_send_memo_html" => json!({
+                "from_address": from,
+                "to_address": TO,
+                "amount": [{ "denom": "uatom", "amount": "1" }],
+            }),
+            "msg_send_to_32_byte" => json!({
+                "from_address": from,
+                "to_address": TO_32_BYTE,
+                "amount": [{ "denom": "uatom", "amount": "1000000" }],
+            }),
+            // base64 of {"recover":{}}: a crosschain swap's recovery, with nothing attached.
+            "msg_execute_contract_32_no_funds" => json!({
+                "sender": osmo,
+                "contract": XCS,
+                "msg": "eyJyZWNvdmVyIjp7fX0=",
+                "funds": [],
+            }),
+            // base64 of a CW721 transfer_nft whose token id is "rock & roll".
+            "msg_execute_contract_nft_html" => json!({
+                "sender": osmo,
+                "contract": CW721,
+                "msg": "eyJ0cmFuc2Zlcl9uZnQiOnsicmVjaXBpZW50Ijoib3NtbzFqcmttZGN3Z3E5NHVhYW14NnpheDJsdWV3bGhmN3U0azVyNHBxcyIsInRva2VuX2lkIjoicm9jayAmIHJvbGwifX0=",
+                "funds": [],
+            }),
+            // The timestamp alone, the way a wallet sends a transfer: no timeout_height key.
+            "msg_transfer_timestamp_only" => json!({
+                "source_port": "transfer",
+                "source_channel": "channel-141",
+                "token": { "denom": "uatom", "amount": "1000000" },
+                "sender": from,
+                "receiver": osmo,
+                "timeout_timestamp": "1791400000000000000",
+            }),
             other => panic!(
                 "vector \"{other}\" has no proto-JSON counterpart; add it to value_for or \
                  remove it from the generator"
@@ -1467,7 +1508,7 @@ mod tests {
         }
 
         assert!(
-            checked >= 12,
+            checked >= 17,
             "expected the whole vector set minus {NO_TIMEOUT}, checked {checked}"
         );
     }

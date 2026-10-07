@@ -158,6 +158,44 @@ fn message_for(name: &str, addresses: &Value) -> Msg {
             token_in_denom: "uosmo".to_owned(),
             token_out_min_amount: "350000".to_owned(),
         },
+        // The memo is the case's, "rent & food <3>": the message is msg_send_with_memo's.
+        "msg_send_memo_html" => Msg::Send {
+            from_address: from,
+            to_address: to,
+            amount: vec![Coin::new("uatom", "1").unwrap()],
+        },
+        "msg_send_to_32_byte" => Msg::Send {
+            from_address: from,
+            to_address: TO_32_BYTE.to_owned(),
+            amount: vec![Coin::new("uatom", "1000000").unwrap()],
+        },
+        "msg_execute_contract_32_no_funds" => Msg::ExecuteContract {
+            sender: osmo,
+            contract: XCS.to_owned(),
+            msg: br#"{"recover":{}}"#.to_vec(),
+            funds: vec![],
+        },
+        // Byte for byte what JSON.stringify wrote: the & stays raw in the protobuf, and only the
+        // Amino document escapes it.
+        "msg_execute_contract_nft_html" => Msg::ExecuteContract {
+            sender: osmo,
+            contract: CW721.to_owned(),
+            msg: format!(
+                r#"{{"transfer_nft":{{"recipient":"{NFT_RECIPIENT}","token_id":"rock & roll"}}}}"#
+            )
+            .into_bytes(),
+            funds: vec![],
+        },
+        "msg_transfer_timestamp_only" => Msg::IbcTransfer {
+            source_port: "transfer".to_owned(),
+            source_channel: "channel-141".to_owned(),
+            token: Coin::new("uatom", "1000000").unwrap(),
+            sender: from,
+            receiver: osmo,
+            timeout_height: Height::default(),
+            timeout_timestamp: 1_791_400_000_000_000_000,
+            memo: String::new(),
+        },
         other => panic!(
             "vector \"{other}\" has no Rust counterpart; add it to message_for or remove it \
              from the generator"
@@ -170,6 +208,22 @@ fn message_for(name: &str, addresses: &Value) -> Msg {
 const ATOM_ON_OSMOSIS: &str =
     "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
 const SWAP_OUT_DENOM: &str = "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
+
+/// Osmosis crosschain-swaps, a real contract: 32 bytes, as wasmd derives every contract address.
+const XCS: &str = "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs";
+/// The same 32 bytes under the hub's prefix, the generator's 32-byte recipient.
+const TO_32_BYTE: &str = "cosmos1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3s4mk53k";
+/// The generator's CW721 collection, 32 bytes, and the account its NFT goes to.
+const CW721: &str = "osmo19vxk34pf2uqf8warhsgqswa5sqyxnm493lxr4808gyy2rjs5yajq0c4l8v";
+const NFT_RECIPIENT: &str = "osmo1jrkmdcwgq94uaamx6zax2luewlhf7u4k5r4pqs";
+
+/// The cases whose recipient or contract is 32 bytes. They must decode as named messages: before
+/// 0.1.1 the decoder held them to the 20-byte account rule and called every one unknown.
+const THIRTY_TWO_BYTE_CASES: [&str; 3] = [
+    "msg_send_to_32_byte",
+    "msg_execute_contract_32_no_funds",
+    "msg_execute_contract_nft_html",
+];
 
 fn signer_from(vectors: &Value, public_key: Vec<u8>) -> SignerData {
     SignerData {
@@ -363,10 +417,76 @@ fn every_vector_has_a_rust_counterpart() {
         .map(|c| str_at(c, &["name"]))
         .collect();
 
-    assert!(names.len() >= 13, "expected the full vector set");
+    assert!(names.len() >= 18, "expected the full vector set");
     for name in &names {
         // Panics with a clear message if a case has no counterpart.
         let _ = message_for(name, addresses);
+    }
+}
+
+fn case_named(vectors: &Value, name: &str) -> Value {
+    vectors["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == Value::String(name.to_owned()))
+        .unwrap_or_else(|| panic!("vector {name} is missing"))
+        .clone()
+}
+
+#[test]
+fn thirty_two_byte_recipients_and_contracts_decode_as_named_messages() {
+    // A crosschain swap's recovery, an NFT transfer, a payment to a DAO treasury: every real
+    // contract and every module account is 32 bytes. Held to the 20-byte account rule, each came
+    // back unknown and was refused unless blind signing was on.
+    let vectors = load();
+    for name in THIRTY_TWO_BYTE_CASES {
+        let case = case_named(&vectors, name);
+        let bytes = hex::decode(str_at(&case, &["direct", "sign_bytes_hex"])).unwrap();
+        let decoded = zunia_cosmos::decode_direct_sign_doc(&bytes).unwrap();
+        assert!(
+            decoded.is_safe_to_sign_without_blind_signing(),
+            "{name}: decoded as {:?}",
+            decoded.msgs
+        );
+        let (named, prefix) = match &decoded.msgs[0] {
+            zunia_cosmos::DecodedMsg::Send { to, .. } => (to.as_str(), "cosmos"),
+            zunia_cosmos::DecodedMsg::ExecuteContract { contract, .. } => {
+                (contract.as_str(), "osmo")
+            }
+            other => panic!("{name}: decoded as {other:?}"),
+        };
+        assert!(
+            zunia_kernel::decode_bech32(named).is_err()
+                && zunia_kernel::validate_contract_address(named, prefix).is_ok(),
+            "{name}: {named} is meant to be 32 bytes on {prefix}"
+        );
+    }
+}
+
+#[test]
+fn html_characters_in_a_memo_or_a_contract_message_are_signed_escaped() {
+    // The reference serializer escapes & < > the way Go's encoding/json does, which is how the
+    // chain rebuilds the document. These two cases pin that the goldens carry the escapes, so
+    // the Amino comparison above is a comparison against the chain's spelling.
+    let vectors = load();
+    let backslash = char::from(0x5c_u8);
+    for (name, escaped) in [
+        (
+            "msg_send_memo_html",
+            format!("rent {backslash}u0026 food {backslash}u003c3{backslash}u003e"),
+        ),
+        (
+            "msg_execute_contract_nft_html",
+            format!("rock {backslash}u0026 roll"),
+        ),
+    ] {
+        let doc = str_at(&case_named(&vectors, name), &["amino", "sign_doc"]);
+        assert!(doc.contains(&escaped), "{name}: {doc}");
+        assert!(
+            !doc.contains('&') && !doc.contains('<') && !doc.contains('>'),
+            "{name}: {doc}"
+        );
     }
 }
 
