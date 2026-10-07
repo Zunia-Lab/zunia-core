@@ -268,8 +268,17 @@ pub extern "C" fn zunia_sign_cosmos(
     .unwrap_or_else(|e| to_cstring(format!("error: {e}")))
 }
 
-/// Describes `SIGN_MODE_DIRECT` bytes a dApp handed over, as JSON:
-/// `{ chainId, memo, hasUnknownMsgs, safeWithoutBlindSigning, summaries }`.
+/// Describes `SIGN_MODE_DIRECT` bytes a dApp handed over, as JSON: payload v2, the same object
+/// the wasm binding's `decodeDirectTx` returns, built by the same function
+/// (`zunia_cosmos::describe::decoded_tx_payload`):
+///
+/// ```text
+/// { chainId, memo, hasUnknownMsgs, safeWithoutBlindSigning, summaries, addresses,
+///   accountNumber, sequence, timeoutHeight, fee: { amount, gasLimit },
+///   messages: [{ typeUrl, summary, unknown, recipient?, detail? }] }
+/// ```
+///
+/// Every key 0.1.0 returned is unchanged; `addresses` and everything after it are new here.
 ///
 /// Returns the error encoding when the document itself cannot be trusted, which includes any
 /// singular field of the `SignDoc`, `TxBody`, `AuthInfo`, `Fee` or an `Any` written twice. A
@@ -282,14 +291,7 @@ pub extern "C" fn zunia_decode_direct_tx(sign_doc_hex: *const c_char) -> *mut c_
         let bytes =
             hex::decode(sign_doc_hex.trim_start_matches("0x")).map_err(|e| e.to_string())?;
         let decoded = decode_direct_sign_doc(&bytes).map_err(|e| e.to_string())?;
-        let payload = serde_json::json!({
-            "chainId": decoded.chain_id,
-            "memo": decoded.memo,
-            "hasUnknownMsgs": decoded.has_unknown_msgs,
-            "safeWithoutBlindSigning": decoded.is_safe_to_sign_without_blind_signing(),
-            "summaries": decoded.summaries(),
-        });
-        Ok(payload.to_string())
+        Ok(zunia_cosmos::describe::decoded_tx_payload(&decoded).to_string())
     })()
     .map(to_cstring)
     .unwrap_or_else(|e| to_cstring(format!("error: {e}")))
@@ -1037,6 +1039,12 @@ mod tests {
         assert!(!ok(zunia_kernel_version()).is_empty());
     }
 
+    #[test]
+    fn version_is_the_crate_version() {
+        // [workspace.package] version, the number the npm package and the wasm kernel report.
+        assert_eq!(ok(zunia_kernel_version()), env!("CARGO_PKG_VERSION"));
+    }
+
     /// The assertion this binding exists for: a message parsed from the JSON a client actually
     /// sends must produce the sign bytes CosmJS produces, in both modes.
     ///
@@ -1382,6 +1390,87 @@ mod tests {
                 "regression_any_with_two_type_urls",
             ))),
             "could not decode payload",
+        );
+    }
+
+    /// Payload v2, field for field what the wasm binding's `decodeDirectTx` returns for the golden
+    /// send (`crates/wasm` pins the same object). Both bindings build it with
+    /// `zunia_cosmos::describe::decoded_tx_payload`; this holds the FFI to the result, not just to
+    /// the function.
+    fn golden_send_payload(vectors: &Value) -> Value {
+        let from = text(&vectors["key"]["addresses"]["cosmos"]);
+        let summary = format!("Send 1000000 uatom to {RECIPIENT}");
+        json!({
+            "chainId": "cosmoshub-4",
+            "memo": "",
+            "hasUnknownMsgs": false,
+            "safeWithoutBlindSigning": true,
+            "summaries": [summary],
+            "addresses": [from, RECIPIENT],
+            "accountNumber": "12345",
+            "sequence": "7",
+            "timeoutHeight": "0",
+            "fee": { "amount": [{ "denom": "uatom", "amount": "5000" }], "gasLimit": "200000" },
+            "messages": [{
+                "typeUrl": "/cosmos.bank.v1beta1.MsgSend",
+                "summary": summary,
+                "unknown": false,
+                "recipient": RECIPIENT,
+            }],
+        })
+    }
+
+    #[test]
+    fn decode_direct_tx_returns_the_payload_the_wasm_binding_returns() {
+        let vectors = vectors();
+        let golden: Value = serde_json::from_str(&ok(decode_direct(text(
+            &case(&vectors, "msg_send")["direct"]["sign_bytes_hex"],
+        ))))
+        .unwrap();
+        assert_eq!(golden, golden_send_payload(&vectors));
+
+        // Every golden document and a send demoted to unknown: the object the shared builder
+        // produces, key for key, so the two bindings cannot drift.
+        let mut documents: Vec<String> = vectors["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|found| text(&found["direct"]["sign_bytes_hex"]).to_owned())
+            .collect();
+        documents.push(corpus_seed("regression_send_with_two_recipients"));
+        for document in documents {
+            let returned: Value = serde_json::from_str(&ok(decode_direct(&document))).unwrap();
+            let decoded = decode_direct_sign_doc(&hex::decode(&document).unwrap()).unwrap();
+            assert_eq!(
+                returned,
+                zunia_cosmos::describe::decoded_tx_payload(&decoded),
+                "{document}"
+            );
+            for key in [
+                "chainId",
+                "memo",
+                "hasUnknownMsgs",
+                "safeWithoutBlindSigning",
+                "summaries",
+                "addresses",
+                "accountNumber",
+                "sequence",
+                "timeoutHeight",
+                "fee",
+                "messages",
+            ] {
+                assert!(returned.get(key).is_some(), "{key} is missing: {returned}");
+            }
+        }
+
+        // What a summary cannot say, through the FFI: a contract call's message.
+        let call: Value = serde_json::from_str(&ok(decode_direct(text(
+            &case(&vectors, "msg_execute_contract_nft_html")["direct"]["sign_bytes_hex"],
+        ))))
+        .unwrap();
+        assert_eq!(
+            call["messages"][0]["detail"]["msg"]["transfer_nft"]["token_id"],
+            json!("rock & roll")
         );
     }
 

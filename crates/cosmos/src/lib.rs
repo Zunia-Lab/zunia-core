@@ -13,6 +13,8 @@
 //! - [`json`]: the proto-JSON bridge every binding parses client payloads through.
 //! - [`tx`]: transaction assembly, both sign documents, and ADR-36.
 //! - [`decode`]: turning bytes the wallet did not build into something a user can read.
+//! - [`describe`]: what the signing prompt is handed about a decoded transaction, the payload
+//!   both bindings return.
 //!
 //! # The signing contract
 //!
@@ -26,6 +28,7 @@
 pub mod amino;
 pub mod amount;
 pub mod decode;
+pub mod describe;
 pub mod error;
 pub mod json;
 pub mod msg;

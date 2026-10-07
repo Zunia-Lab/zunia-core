@@ -114,6 +114,14 @@ const OSMOSIS_FEE = JSON.stringify({
 const TO = "cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz";
 const ATOM_ON_OSMOSIS = "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
 const SWAP_OUT_DENOM = "ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138";
+/** Osmosis crosschain-swaps: 32 bytes, like every contract, and the same bytes on the hub. */
+const XCS = "osmo1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3sqxwvxs";
+const TO_32_BYTE = "cosmos1uwk8xc6q0s6t5qcpr6rht3sczu6du83xq8pwxjua0hfj5hzcnh3s4mk53k";
+/** The vectors' CW721 collection (32 bytes) and the account its NFT goes to. */
+const CW721 = "osmo19vxk34pf2uqf8warhsgqswa5sqyxnm493lxr4808gyy2rjs5yajq0c4l8v";
+const NFT_RECIPIENT = "osmo1jrkmdcwgq94uaamx6zax2luewlhf7u4k5r4pqs";
+
+const base64 = (text) => Buffer.from(text, "utf8").toString("base64");
 
 function messageFor(name, addresses) {
   const from = addresses.cosmos;
@@ -206,6 +214,55 @@ function messageFor(name, addresses) {
           token_out_min_amount: "350000",
         },
       };
+    // The shapes the chain checks most strictly in Amino: the vote option as a number, & < > in
+    // a memo and in a contract message, "funds":[] and "timeout_height":{} written although
+    // empty, and recipients and contracts of 32 bytes.
+    case "msg_vote":
+      return {
+        typeUrl: "/cosmos.gov.v1beta1.MsgVote",
+        value: { proposal_id: "848", voter: from, option: "no_with_veto" },
+      };
+    case "msg_send_memo_html":
+      return {
+        typeUrl: "/cosmos.bank.v1beta1.MsgSend",
+        value: { from_address: from, to_address: TO, amount: [{ denom: "uatom", amount: "1" }] },
+      };
+    case "msg_send_to_32_byte":
+      return {
+        typeUrl: "/cosmos.bank.v1beta1.MsgSend",
+        value: {
+          from_address: from,
+          to_address: TO_32_BYTE,
+          amount: [{ denom: "uatom", amount: "1000000" }],
+        },
+      };
+    case "msg_execute_contract_32_no_funds":
+      return {
+        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        value: { sender: addresses.osmo, contract: XCS, msg: base64('{"recover":{}}'), funds: [] },
+      };
+    case "msg_execute_contract_nft_html":
+      return {
+        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        value: {
+          sender: addresses.osmo,
+          contract: CW721,
+          msg: base64(`{"transfer_nft":{"recipient":"${NFT_RECIPIENT}","token_id":"rock & roll"}}`),
+          funds: [],
+        },
+      };
+    case "msg_transfer_timestamp_only":
+      return {
+        typeUrl: "/ibc.applications.transfer.v1.MsgTransfer",
+        value: {
+          source_port: "transfer",
+          source_channel: "channel-141",
+          token: { denom: "uatom", amount: "1000000" },
+          sender: from,
+          receiver: addresses.osmo,
+          timeout_timestamp: "1791400000000000000",
+        },
+      };
     default:
       throw new Error(`no proto-JSON counterpart for vector "${name}"`);
   }
@@ -238,7 +295,9 @@ console.log(
 );
 
 // 1. build_sign_bytes matches CosmJS, in both sign modes, for the three shapes the task names,
-//    and matches osmojs for the three Osmosis swaps.
+//    matches osmojs for the three Osmosis swaps, and matches the converters for the Amino shapes
+//    kernel 0.1.0 got wrong (a vote, an empty timeout_height, empty funds, & < > unescaped) and
+//    the 32-byte recipients it could not build.
 console.log("build_sign_bytes vs golden vectors");
 for (const name of [
   "msg_send",
@@ -247,6 +306,12 @@ for (const name of [
   "msg_swap_exact_amount_in",
   "msg_swap_exact_amount_in_multi_hop",
   "msg_split_route_swap_exact_amount_in",
+  "msg_vote",
+  "msg_send_memo_html",
+  "msg_send_to_32_byte",
+  "msg_execute_contract_32_no_funds",
+  "msg_execute_contract_nft_html",
+  "msg_transfer_timestamp_only",
 ]) {
   const vector = caseNamed(name);
   const msgs = JSON.stringify([messageFor(name, addresses)]);
@@ -475,6 +540,101 @@ console.log("\ndecode_direct_tx and a singular field written twice");
   );
 }
 
+// 5d. decode_direct_tx payload v2: what a summary cannot say reaches the prompt, as plain
+//     objects, and the 0.1.0 keys are unchanged. Every document here is built by the artifact
+//     itself, from the JSON a dApp sends.
+console.log("\ndecode_direct_tx payload v2");
+{
+  const golden = caseNamed("msg_send");
+  const send = core.decodeDirectTx(golden.direct.sign_bytes_hex);
+  ok("the payload is a plain object", !(send instanceof Map) && Object.getPrototypeOf(send) === Object.prototype);
+  eq("summaries are unchanged", JSON.stringify(send.summaries), JSON.stringify([`Send 1000000 uatom to ${TO}`]));
+  eq("addresses are unchanged", JSON.stringify(send.addresses), JSON.stringify([addresses.cosmos, TO]));
+  eq(
+    "messages[0] names the type, the summary and the recipient",
+    JSON.stringify(send.messages),
+    JSON.stringify([
+      {
+        typeUrl: "/cosmos.bank.v1beta1.MsgSend",
+        summary: send.summaries[0],
+        unknown: false,
+        recipient: TO,
+      },
+    ]),
+  );
+  eq("fee", JSON.stringify(send.fee), JSON.stringify({ amount: [{ denom: "uatom", amount: "5000" }], gasLimit: "200000" }));
+  eq("accountNumber is a string", send.accountNumber, String(signer.account_number));
+  eq("sequence is a string", send.sequence, String(signer.sequence));
+  eq("timeoutHeight is a string", send.timeoutHeight, "0");
+
+  const decodeBuilt = (chainId, message, memo = "") =>
+    core.decodeDirectTx(
+      core.buildSignBytes(chainId, JSON.stringify([message]), OSMOSIS_FEE, memo, 1, 0, pubkey, false, "direct"),
+    );
+
+  // A cw20 transfer: the summary says "transfer", the message says to whom.
+  const cw20 = decodeBuilt("osmosis-1", {
+    typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+    value: {
+      sender: addresses.osmo,
+      contract: XCS,
+      msg: base64('{"transfer":{"recipient":"osmo1attacker","amount":"999999999"}}'),
+      funds: [],
+    },
+  });
+  eq("a cw20 transfer is understood", cw20.safeWithoutBlindSigning, true);
+  eq("its contract message names the recipient", cw20.messages[0].detail?.msg?.transfer?.recipient, "osmo1attacker");
+  eq("its detail is an execute-contract", cw20.messages[0].detail?.kind, "execute-contract");
+  eq("its funds are listed, even empty", JSON.stringify(cw20.messages[0].detail?.funds), "[]");
+
+  // A nanosecond timeout and a __proto__ key, both legal in a contract message: the decode must
+  // neither throw on the first nor let the second reach a prototype.
+  const awkward = decodeBuilt("osmosis-1", {
+    typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+    value: {
+      sender: addresses.osmo,
+      contract: XCS,
+      msg: base64('{"swap_and_action":{"timeout_timestamp":1791310044063841569,"__proto__":{"polluted":true}}}'),
+      funds: [{ denom: "uosmo", amount: "1" }],
+    },
+  });
+  const body = awkward.messages[0].detail?.msg?.swap_and_action;
+  eq("an integer above 2^53 reads as a number", typeof body?.timeout_timestamp, "number");
+  ok("a __proto__ key stays an ordinary property", Object.hasOwn(body ?? {}, "__proto__"));
+  ok("and pollutes nothing", Object.getPrototypeOf(body ?? {}) === Object.prototype && {}.polluted === undefined);
+
+  // A packet-forward memo, which redirects the tokens once they land.
+  const forward = '{"forward":{"receiver":"stride1attacker","port":"transfer","channel":"channel-5"}}';
+  const transfer = messageFor("msg_transfer_with_timeout", addresses);
+  const ibc = core.decodeDirectTx(
+    core.buildSignBytes(
+      signer.chain_id,
+      JSON.stringify([{ ...transfer, value: { ...transfer.value, memo: forward } }]),
+      FEE, "", signer.account_number, signer.sequence, pubkey, false, "direct",
+    ),
+  );
+  eq("the packet memo reaches the prompt", ibc.messages[0].detail?.memo, forward);
+  eq("the transfer names its receiver", ibc.messages[0].recipient, addresses.addr_safro);
+  eq("its detail is an ibc-transfer on the right channel", `${ibc.messages[0].detail?.kind} ${ibc.messages[0].detail?.sourceChannel}`, "ibc-transfer channel-141");
+
+  // 32 bytes on the signing chain: understood, and the recipient is named.
+  const toContract = core.decodeDirectTx(caseNamed("msg_send_to_32_byte").direct.sign_bytes_hex);
+  eq("a send to a 32-byte address is understood", toContract.safeWithoutBlindSigning, true);
+  eq("and names it as the recipient", toContract.messages[0].recipient, TO_32_BYTE);
+  const recover = core.decodeDirectTx(caseNamed("msg_execute_contract_32_no_funds").direct.sign_bytes_hex);
+  eq("a call to a 32-byte contract is understood", recover.safeWithoutBlindSigning, true);
+
+  // An unknown message: named, flagged, and carrying nothing the wallet did not read.
+  const unknown = core.decodeDirectTx(
+    readFileSync(path.join(ROOT, "fuzz", "corpus", "tx_decoder", "regression_send_with_two_recipients")).toString("hex"),
+  );
+  eq(
+    "an unknown message carries its type URL and unknown: true, and nothing else",
+    JSON.stringify(unknown.messages),
+    JSON.stringify([{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", summary: unknown.summaries[0], unknown: true }]),
+  );
+}
+
 // 6. Numbers, not just BigInts. account_number and sequence come off a REST response as JSON
 //    numbers; the wasm boundary converts u64 with ToBigInt, which throws on a Number.
 console.log("\nu64 arguments accept what a REST response actually hands you");
@@ -494,6 +654,8 @@ console.log("\npackage shape");
 {
   const pkg = JSON.parse(readFileSync(path.join(PKG, "package.json"), "utf8"));
   eq("package name", pkg.name, "@zunialab/core");
+  // Stamped from Cargo.toml, as is the kernel's own version: a mismatch means a stale build.
+  eq("kernelVersion() is the package version", core.kernelVersion(), pkg.version);
   eq("package type", pkg.type, "module");
   eq("types entry", pkg.types, "./index.d.ts");
   eq("node condition", pkg.exports["."].node, "./node/index.mjs");
@@ -504,6 +666,7 @@ console.log("\npackage shape");
   for (const fn of ["buildSignBytes", "assembleTxRaw", "buildSimulateTx", "signTx", "previewTx"]) {
     ok(`index.d.ts declares ${fn}`, new RegExp(`export function ${fn}\\(`).test(dts));
   }
+  ok("index.d.ts types payload v2", /messages: DecodedMessage\[\];/.test(dts) && /interface ExecuteContractDetail/.test(dts) && /interface IbcTransferDetail/.test(dts));
   const generated = readFileSync(path.join(PKG, "zunia_core.d.ts"), "utf8");
   for (const fn of ["build_sign_bytes", "assemble_tx_raw", "build_simulate_tx", "sign_tx", "preview_tx"]) {
     ok(`generated zunia_core.d.ts declares ${fn}`, new RegExp(`export function ${fn}\\(`).test(generated));

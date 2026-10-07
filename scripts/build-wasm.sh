@@ -107,9 +107,11 @@ cp "$BINDGEN_OUT"/zunia_core_bg.wasm.d.ts "$OUT/" 2>/dev/null || true
 #     glue into a working call.
 #   * `preview_tx` returns a JSON string rather than a JsValue, because serde-wasm-bindgen
 #     renders a serde map as a JS `Map` and `preview.memo` would read `undefined`. The same
-#     applies to `derive_address`, `decode_direct_tx`, `parse_chain` and `sign_evm_tx`, which
-#     do return JsValue and therefore do hand back `Map`s. `toPlain` converts them, so the
-#     package's contract is plain objects everywhere.
+#     applies to `derive_address`, `parse_chain` and `sign_evm_tx`, which do return JsValue
+#     and therefore do hand back `Map`s. `toPlain` converts them, so the package's contract is
+#     plain objects everywhere. `decode_direct_tx` builds its object with `JSON.parse` on the
+#     Rust side, because its payload carries a dApp's contract message, which serde-wasm-bindgen
+#     cannot always represent; `toPlain` passes a plain object through untouched.
 # ---------------------------------------------------------------------------------------
 cat > "$OUT/index.js" <<'EOF'
 import init, { initSync } from "./zunia_core.js";
@@ -268,6 +270,63 @@ export interface DerivedAddress {
   ethAddress?: string;
 }
 
+/** Any JSON value, as `JSON.parse` returns it. */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+/** What a contract call carries that its summary does not say. */
+export interface ExecuteContractDetail {
+  kind: "execute-contract";
+  contract: string;
+  /**
+   * The contract message, parsed. Show it in full: a cw20 `transfer` names its own recipient in
+   * here. `null` only for bytes that are not JSON, which never reach a known message. An integer
+   * above 2^53 reads as the nearest number, as with any JSON in JavaScript.
+   */
+  msg: JsonValue;
+  funds: Coin[];
+}
+
+/** What an IBC transfer carries that its summary does not say. */
+export interface IbcTransferDetail {
+  kind: "ibc-transfer";
+  sourceChannel: string;
+  receiver: string;
+  token: Coin | null;
+  /**
+   * The packet memo. Packet-forward and ibc-hooks instructions for the receiving chain live
+   * here, and they can send the tokens on to another chain and another receiver.
+   */
+  memo: string;
+}
+
+export type DecodedMessageDetail = ExecuteContractDetail | IbcTransferDetail;
+
+/** One message of a decoded transaction, in order. */
+export interface DecodedMessage {
+  /** The type URL the message's `Any` carried, known or not. */
+  typeUrl: string;
+  /** Word for word `summaries[i]`. */
+  summary: string;
+  /** True when this build cannot read the message. Such a message has no `recipient` or `detail`. */
+  unknown: boolean;
+  /** Where funds go: a send's `to_address`, an IBC transfer's `receiver`. */
+  recipient?: string;
+  /** The contract message or the packet memo, for a contract call or an IBC transfer. */
+  detail?: DecodedMessageDetail;
+}
+
+/**
+ * What {@link decodeDirectTx} returns: payload v2, kernel 0.1.1 and later.
+ *
+ * The first six fields are 0.1.0's, unchanged. A caller that must also run against a 0.1.0
+ * kernel can tell the two apart by `messages`. Every u64 is a decimal string.
+ */
 export interface DecodedDirectTx {
   chainId: string;
   memo: string;
@@ -275,6 +334,11 @@ export interface DecodedDirectTx {
   safeWithoutBlindSigning: boolean;
   summaries: string[];
   addresses: string[];
+  accountNumber: string;
+  sequence: string;
+  timeoutHeight: string;
+  fee: { amount: Coin[]; gasLimit: string };
+  messages: DecodedMessage[];
 }
 
 export interface Coin {

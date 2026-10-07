@@ -953,7 +953,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zunia-cosmos"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "hex",
@@ -966,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "zunia-evm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hex",
  "serde",
@@ -985,7 +985,7 @@ dependencies = [
 
 [[package]]
 name = "zunia-kernel"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "argon2",
  "base64",
@@ -1012,7 +1012,7 @@ dependencies = [
 
 [[package]]
 name = "zunia-properties"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "zunia-cosmos",
  "zunia-evm",
@@ -1023,7 +1023,7 @@ dependencies = [
 
 [[package]]
 name = "zunia-registry"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1032,7 +1032,7 @@ dependencies = [
 
 [[package]]
 name = "zunia-svm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bs58",
  "hex",

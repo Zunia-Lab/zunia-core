@@ -3,7 +3,14 @@ name: Release
 on:
   push:
     branches: [main]
+    # A v* tag is what cuts a release: the GitHub Release job below runs only for one.
+    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish @zunialab/core to npm (needs the NPM_TOKEN secret)
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -18,6 +25,11 @@ jobs:
   wasm:
     name: Build and publish @zunialab/core
     runs-on: ubuntu-latest
+    env:
+      # npm publish runs for a dispatch with publish=true, and for a v* tag when the repository
+      # has an NPM_TOKEN secret. Anything else builds and uploads the package without publishing.
+      # A step's `if` cannot read secrets, hence the flag.
+      PUBLISH_NPM: ${{ (github.event_name == 'workflow_dispatch' && inputs.publish) || (startsWith(github.ref, 'refs/tags/v') && secrets.NPM_TOKEN != '') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,9 +49,22 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      # scripts/build-wasm.sh installs the wasm-bindgen CLI that matches Cargo.lock.
-      - name: Install wasm-opt
-        run: sudo apt-get update && sudo apt-get install -y binaryen
+      # scripts/build-wasm.sh installs the wasm-bindgen CLI that matches Cargo.lock. wasm-opt is
+      # pinned to the binaryen release a local build uses (130) and checked against its sha256:
+      # apt's binaryen is another version, and its output would not match a build from the tag.
+      - name: Install wasm-opt (binaryen 130)
+        env:
+          BINARYEN_VERSION: "130"
+          BINARYEN_SHA256: 0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc
+        run: |
+          tarball="binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/$tarball"
+          echo "$BINARYEN_SHA256  $RUNNER_TEMP/$tarball" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP"
+          bin="$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin"
+          "$bin/wasm-opt" --version | grep -q "version ${BINARYEN_VERSION}"
+          echo "$bin" >> "$GITHUB_PATH"
 
       - name: Verify
         env:
@@ -51,21 +76,43 @@ jobs:
           cargo test --workspace --all-features
 
       - name: Build npm package
-        run: ./scripts/build-wasm.sh
+        run: |
+          ./scripts/build-wasm.sh
+          node scripts/smoke-npm.mjs
+
+      # A tag names a version, and Cargo.toml stamps the one the package and kernelVersion()
+      # report. Releasing v0.1.2 with a kernel that calls itself 0.1.1 is refused here.
+      - name: Check the tag names the version built
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          built="$(node -p 'require("./packages/npm/package.json").version')"
+          if [[ "v$built" != "$GITHUB_REF_NAME" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the version built ($built)"
+            exit 1
+          fi
+
+      # A record, not a check: the module embeds the runner's cargo registry path, so these
+      # differ from a local build of the same commit (RELEASING.md).
+      - name: Record the kernel checksum
+        run: |
+          {
+            echo '```'
+            (cd packages/npm && shasum -a 256 zunia_core_bg.wasm zunia_core.js index.js)
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish @zunialab/core with provenance
+        if: env.PUBLISH_NPM == 'true'
         working-directory: packages/npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
         run: |
-          # Only publish when this is a version tag push or an explicit dispatch with publish=true.
-          # On ordinary main pushes the artifact is uploaded to the GitHub Release instead.
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            npm publish --access public --provenance
-          else
-            echo "skipping npm publish on untagged main push"
+          if [[ -z "$NODE_AUTH_TOKEN" ]]; then
+            echo "::error::publish=true needs the NPM_TOKEN repository secret"
+            exit 1
           fi
+          npm publish --access public --provenance
 
       - uses: actions/upload-artifact@v4
         with:

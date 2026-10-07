@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.82"
 license = "Apache-2.0"
@@ -91,12 +91,12 @@ prost-types = { version = "0.13", default-features = false }
 thiserror = { version = "2", default-features = false }
 
 # Internal crates
-zunia-kernel = { path = "crates/kernel", version = "0.1.0" }
-zunia-registry = { path = "crates/registry", version = "0.1.0" }
-zunia-cosmos = { path = "crates/cosmos", version = "0.1.0" }
-zunia-evm = { path = "crates/evm", version = "0.1.0" }
-zunia-svm = { path = "crates/svm", version = "0.1.0" }
-zunia-properties = { path = "crates/properties", version = "0.1.0" }
+zunia-kernel = { path = "crates/kernel", version = "0.1.1" }
+zunia-registry = { path = "crates/registry", version = "0.1.1" }
+zunia-cosmos = { path = "crates/cosmos", version = "0.1.1" }
+zunia-evm = { path = "crates/evm", version = "0.1.1" }
+zunia-svm = { path = "crates/svm", version = "0.1.1" }
+zunia-properties = { path = "crates/properties", version = "0.1.1" }
 
 [profile.release]
 opt-level = "z"

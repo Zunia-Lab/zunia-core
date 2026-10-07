@@ -208,28 +208,31 @@ pub fn sign_cosmos(
 
 /// Describes `SIGN_MODE_DIRECT` bytes a dApp handed over, for the signing prompt.
 ///
+/// Returns payload v2 (see `zunia_cosmos::describe`): the 0.1.0 keys unchanged, plus the
+/// account fields, the fee and one entry per message with its type URL, its recipient and, for
+/// a contract call or an IBC transfer, the contract message or the packet memo.
+///
 /// Throws when the document itself cannot be trusted, which includes any singular field of the
 /// `SignDoc`, `TxBody`, `AuthInfo`, `Fee` or an `Any` written twice. A message the wallet cannot
 /// read, a body with a singular field written twice among them, comes back with
 /// `hasUnknownMsgs: true` and `safeWithoutBlindSigning: false`.
+///
+/// Built with `JSON.parse` rather than `serde_wasm_bindgen`. The payload now carries a contract
+/// message as parsed JSON, and `serde_wasm_bindgen` refuses an integer above 2^53 in it (a
+/// timeout in nanoseconds is one) and renders every object as a `Map`. `JSON.parse` returns
+/// plain objects, keeps a `__proto__` key as an ordinary property, and reads a large integer as
+/// the nearest double, as every JSON reader in JavaScript does.
 #[wasm_bindgen]
 pub fn decode_direct_tx(sign_doc_hex: &str) -> Result<JsValue, JsValue> {
     let payload = decoded_tx_payload(sign_doc_hex).map_err(err)?;
-    serde_wasm_bindgen::to_value(&payload).map_err(err)
+    js_sys::JSON::parse(&payload.to_string())
 }
 
 /// The inner half of [`decode_direct_tx`], kept free of `JsValue` so it can be tested natively.
 fn decoded_tx_payload(sign_doc_hex: &str) -> BindingResult<serde_json::Value> {
     let bytes = decode_hex("sign document", sign_doc_hex)?;
     let decoded = decode_direct_sign_doc(&bytes)?;
-    Ok(serde_json::json!({
-        "chainId": decoded.chain_id,
-        "memo": decoded.memo,
-        "hasUnknownMsgs": decoded.has_unknown_msgs,
-        "safeWithoutBlindSigning": decoded.is_safe_to_sign_without_blind_signing(),
-        "summaries": decoded.summaries(),
-        "addresses": decoded.msgs.iter().flat_map(|m| m.addresses()).collect::<Vec<_>>(),
-    }))
+    Ok(zunia_cosmos::describe::decoded_tx_payload(&decoded))
 }
 
 /// Direct sign bytes for a single bank send.
@@ -2093,6 +2096,254 @@ mod tests {
             decoded_tx_payload(&sign_doc_hex(&body, forged_auth_info.as_bytes())).unwrap_err();
         assert_eq!(refused, BindingError::Cosmos(CosmosError::Decode));
         assert_eq!(refused.to_string(), "could not decode payload");
+    }
+
+    /* ---------------------------------------------------------------------------------- *
+     * Payload v2: what the prompt is handed beyond the summaries
+     * ---------------------------------------------------------------------------------- */
+
+    /// What kernel 0.1.0 (11741e5, the kernel extension 0.1.4 ships) returned as `summaries`
+    /// and `addresses` for every golden sign document of its day, recorded from that build's
+    /// `decodeDirectTx`. Payload v2 only adds keys: these two must not move by a byte.
+    const KERNEL_0_1_0_PROMPTS: &str = r#"{
+"msg_send": [["Send 1000000 uatom to cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4","cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz"]],
+"msg_send_with_memo": [["Send 1 uatom to cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4","cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz"]],
+"msg_delegate": [["Delegate 5000000 uatom to cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4","cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx"]],
+"msg_undelegate": [["Undelegate 1000000 uatom from cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4","cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx"]],
+"msg_begin_redelegate": [["Redelegate 1000000 uatom from cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx to cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4","cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx","cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx"]],
+"msg_withdraw_delegator_reward": [["Claim staking rewards from cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4","cosmosvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae5egnx"]],
+"msg_vote": [["Vote No with veto on proposal 848"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4"]],
+"msg_transfer_no_timeout": [["IBC transfer 1000000 uatom to addr_safro19rl4cm2hmr8afy4kldpxz3fka4jguq0ayvv259 over channel-141"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4","addr_safro19rl4cm2hmr8afy4kldpxz3fka4jguq0ayvv259"]],
+"msg_transfer_with_timeout": [["IBC transfer 1000000 uatom to addr_safro19rl4cm2hmr8afy4kldpxz3fka4jguq0ayvv259 over channel-141"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4","addr_safro19rl4cm2hmr8afy4kldpxz3fka4jguq0ayvv259"]],
+"msg_execute_contract": [["Execute \"swap\" on cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz sending 100 uatom"],["cosmos19rl4cm2hmr8afy4kldpxz3fka4jguq0auqdal4","cosmos1jrkmdcwgq94uaamx6zax2luewlhf7u4kucx3kz"]],
+"msg_swap_exact_amount_in": [["Swap 9950000 uosmo for at least 350000 ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138 through pool 3586"],["osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8"]],
+"msg_swap_exact_amount_in_multi_hop": [["Swap 10000000 uosmo for at least 340000 ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138 through pools 1 → 3586"],["osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8"]],
+"msg_split_route_swap_exact_amount_in": [["Swap 10000000 uosmo for at least 350000 ibc/794C7D7F3B857713878A3A1927251FA6AC1EEE520424C1F6FAFE9BA26D476138 through 2 routes (pools 3498; 3586)"],["osmo19rl4cm2hmr8afy4kldpxz3fka4jguq0a5m7df8"]]
+}"#;
+
+    #[test]
+    fn summaries_and_addresses_are_byte_identical_to_kernel_0_1_0() {
+        // The extension's prompt and its first-time-recipient warning read these two keys today.
+        // A v2 payload that reworded a summary or reordered an address would change what every
+        // existing caller shows, and nothing else in this test file would notice.
+        let vectors = load();
+        let pinned: Value = serde_json::from_str(KERNEL_0_1_0_PROMPTS).unwrap();
+        let pinned = pinned.as_object().unwrap();
+        assert_eq!(pinned.len(), 13, "the goldens 0.1.0 shipped with");
+
+        for case in vectors["cases"].as_array().unwrap() {
+            let name = str_at(case, &["name"]);
+            let payload = decoded_tx_payload(&str_at(case, &["direct", "sign_bytes_hex"])).unwrap();
+            if let Some(then) = pinned.get(&name) {
+                assert_eq!(payload["summaries"], then[0], "{name}: a summary moved");
+                assert_eq!(payload["addresses"], then[1], "{name}: an address moved");
+            }
+            // And for every case, old and new: the v1 keys describe what `messages` describes.
+            let summaries = payload["summaries"].as_array().unwrap();
+            let messages = payload["messages"].as_array().unwrap();
+            assert_eq!(messages.len(), summaries.len(), "{name}");
+            for (message, summary) in messages.iter().zip(summaries) {
+                assert_eq!(&message["summary"], summary, "{name}");
+            }
+            assert_eq!(
+                payload["chainId"],
+                json!(signer_from(&vectors).chain_id),
+                "{name}"
+            );
+            assert_eq!(payload["memo"], case["memo"], "{name}");
+            assert_eq!(payload["hasUnknownMsgs"], json!(false), "{name}");
+            assert_eq!(payload["safeWithoutBlindSigning"], json!(true), "{name}");
+        }
+    }
+
+    #[test]
+    fn decode_direct_tx_hands_the_prompt_the_golden_send_in_full() {
+        // Field for field what the FFI returns for the same document (crates/ffi pins the same
+        // object): the 0.1.0 keys, then the account fields, the fee and the message itself.
+        let vectors = load();
+        let case = case_named(&vectors, "msg_send");
+        let payload = decoded_tx_payload(&str_at(&case, &["direct", "sign_bytes_hex"])).unwrap();
+        let from = str_at(&vectors, &["key", "addresses", "cosmos"]);
+        let summary = format!("Send 1000000 uatom to {TO}");
+        assert_eq!(
+            payload,
+            json!({
+                "chainId": "cosmoshub-4",
+                "memo": "",
+                "hasUnknownMsgs": false,
+                "safeWithoutBlindSigning": true,
+                "summaries": [summary],
+                "addresses": [from, TO],
+                "accountNumber": "12345",
+                "sequence": "7",
+                "timeoutHeight": "0",
+                "fee": { "amount": [{ "denom": "uatom", "amount": "5000" }], "gasLimit": "200000" },
+                "messages": [{
+                    "typeUrl": "/cosmos.bank.v1beta1.MsgSend",
+                    "summary": summary,
+                    "unknown": false,
+                    "recipient": TO,
+                }],
+            })
+        );
+        // The fee and gas the golden was signed with, as the vector file records them.
+        assert_eq!(payload["fee"]["amount"], vectors["signer"]["fee"]["amount"]);
+        assert_eq!(payload["fee"]["gasLimit"], vectors["signer"]["fee"]["gas"]);
+        assert_eq!(
+            payload["accountNumber"],
+            json!(vectors["signer"]["account_number"].to_string())
+        );
+        assert_eq!(
+            payload["sequence"],
+            json!(vectors["signer"]["sequence"].to_string())
+        );
+    }
+
+    /// Direct sign bytes for one Osmosis message, built through the binding from the JSON a dApp
+    /// sends, then decoded the way the extension decodes a dApp's request.
+    fn decode_osmosis(message: Value) -> Value {
+        let vectors = load();
+        let hex = sign_bytes_hex(
+            "osmosis-1",
+            &json!([message]).to_string(),
+            OSMOSIS_FEE,
+            "",
+            1,
+            0,
+            &str_at(&vectors, &["key", "pubkey_compressed_hex"]),
+            false,
+            "direct",
+        )
+        .unwrap();
+        decoded_tx_payload(&hex).unwrap()
+    }
+
+    #[test]
+    fn a_cw20_transfer_shows_the_recipient_its_summary_cannot() {
+        // "Execute \"transfer\" on <token>" is all 0.1.0 could say. The recipient is inside the
+        // contract message, so the message has to reach the prompt whole.
+        let vectors = load();
+        let osmo = str_at(&vectors, &["key", "addresses", "osmo"]);
+        let payload = decode_osmosis(json!({
+            "typeUrl": "/cosmwasm.wasm.v1.MsgExecuteContract",
+            "value": {
+                "sender": osmo,
+                "contract": XCS,
+                // base64 of {"transfer":{"recipient":"osmo1attacker","amount":"999999999"}}.
+                "msg": "eyJ0cmFuc2ZlciI6eyJyZWNpcGllbnQiOiJvc21vMWF0dGFja2VyIiwiYW1vdW50IjoiOTk5OTk5OTk5In19",
+                "funds": [],
+            },
+        }));
+        assert_eq!(payload["safeWithoutBlindSigning"], json!(true));
+        let message = &payload["messages"][0];
+        assert_eq!(
+            message["summary"],
+            json!(format!("Execute \"transfer\" on {XCS}"))
+        );
+        assert_eq!(
+            message["detail"]["msg"]["transfer"]["recipient"],
+            json!("osmo1attacker")
+        );
+        assert_eq!(
+            message["detail"],
+            json!({
+                "kind": "execute-contract",
+                "contract": XCS,
+                "msg": { "transfer": { "recipient": "osmo1attacker", "amount": "999999999" } },
+                "funds": [],
+            })
+        );
+        assert!(
+            message.get("recipient").is_none(),
+            "a contract call pays no named recipient"
+        );
+    }
+
+    #[test]
+    fn a_packet_forward_memo_reaches_the_prompt() {
+        // A transfer that looks like one hop to Osmosis, and whose memo sends it on to Stride.
+        let vectors = load();
+        let addresses = &vectors["key"]["addresses"];
+        let forward =
+            r#"{"forward":{"receiver":"stride1attacker","port":"transfer","channel":"channel-5"}}"#;
+        let mut value = value_for("msg_transfer_with_timeout", addresses);
+        value["memo"] = json!(forward);
+        let signer = signer_from(&vectors);
+        let hex = sign_bytes_hex(
+            &signer.chain_id,
+            &json!([{ "typeUrl": "/ibc.applications.transfer.v1.MsgTransfer", "value": value }])
+                .to_string(),
+            FEE,
+            "",
+            signer.account_number,
+            signer.sequence,
+            &signer.public_key_hex,
+            false,
+            "direct",
+        )
+        .unwrap();
+        let payload = decoded_tx_payload(&hex).unwrap();
+        let message = &payload["messages"][0];
+        assert!(message["detail"]["memo"]
+            .as_str()
+            .unwrap()
+            .contains("forward"));
+        assert_eq!(
+            message["detail"],
+            json!({
+                "kind": "ibc-transfer",
+                "sourceChannel": "channel-141",
+                "receiver": str_at(addresses, &["addr_safro"]),
+                "token": { "denom": "uatom", "amount": "1000000" },
+                "memo": forward,
+            })
+        );
+        assert_eq!(
+            message["recipient"],
+            json!(str_at(addresses, &["addr_safro"]))
+        );
+        // The summary alone never mentions it.
+        assert!(!message["summary"].as_str().unwrap().contains("stride"));
+    }
+
+    #[test]
+    fn an_unknown_message_is_named_and_carries_no_detail() {
+        let vectors = load();
+        let (_, auth_info) = golden_send_parts(&vectors);
+        let mut any = ProtoWriter::new();
+        any.string(1, "/cosmos.authz.v1beta1.MsgGrant")
+            .bytes(2, &[10, 3, 1, 2, 3]);
+        let mut body = ProtoWriter::new();
+        body.repeated_message(1, &[any.into_bytes()]);
+        let payload = decoded_tx_payload(&sign_doc_hex(body.as_bytes(), &auth_info)).unwrap();
+        assert_eq!(payload["safeWithoutBlindSigning"], json!(false));
+        assert_eq!(
+            payload["messages"],
+            json!([{
+                "typeUrl": "/cosmos.authz.v1beta1.MsgGrant",
+                "summary": payload["summaries"][0],
+                "unknown": true,
+            }])
+        );
+
+        // A known type demoted to unknown keeps its name and offers nothing it read.
+        let demoted =
+            decoded_tx_payload(&corpus_seed("regression_send_with_two_recipients")).unwrap();
+        assert_eq!(
+            demoted["messages"],
+            json!([{
+                "typeUrl": "/cosmos.bank.v1beta1.MsgSend",
+                "summary": demoted["summaries"][0],
+                "unknown": true,
+            }])
+        );
+    }
+
+    #[test]
+    fn kernel_version_is_the_crate_version() {
+        // Both come from [workspace.package] version, which build-wasm.sh also stamps into
+        // package.json: one number names the kernel everywhere it is reported.
+        assert_eq!(kernel_version(), env!("CARGO_PKG_VERSION"));
     }
 
     #[test]
