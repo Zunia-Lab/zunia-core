@@ -35,6 +35,16 @@ at every level the decoder reads, in `crates/cosmos/src/decode.rs`. The two docu
 `regression_send_with_two_recipients` and `regression_any_with_two_type_urls` in
 `corpus/tx_decoder/`, and `check_tx_decoder` asserts the rule on every input the sweep generates.
 
+A fourth was also found in review, once 32-byte contracts decoded. A contract call is described by
+its action, the top-level key of its message, which nothing on chain checks before the contract
+reads it, and the decoder quoted that key as it was. A call carrying 5,000 OSMO under the key
+U+202E, `swap`, U+2028, U+2028 was reported safe to sign, with a sentence that the override
+reordered and the separators broke. Fixed by naming an action only when it is a plain name (ASCII
+letters, digits, `_` and `-`, at most 128 bytes) and demoting any other contract call to unknown,
+in `crates/cosmos/src/msg.rs` and `decode.rs`. The document is
+`regression_bidi_in_contract_action`, and `check_tx_decoder` now asserts that an understood
+contract call names an action that renders as itself.
+
 ## Running without nightly
 
 `cargo-fuzz` needs a nightly toolchain, which is not always available and is a slow first-time

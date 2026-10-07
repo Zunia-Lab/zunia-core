@@ -66,8 +66,8 @@ use serde_json::{json, Map, Value};
 use crate::amount::Coin;
 use crate::error::{CosmosError, Result};
 use crate::msg::{
-    validate_split_route_swap_exact_amount_in, validate_swap_exact_amount_in, Height, Msg,
-    SwapAmountInRoute, SwapAmountInSplitRoute, VoteOption,
+    contract_action, validate_split_route_swap_exact_amount_in, validate_swap_exact_amount_in,
+    Height, Msg, SwapAmountInRoute, SwapAmountInSplitRoute, VoteOption,
 };
 use crate::tx::{Fee, SignMode};
 
@@ -535,19 +535,22 @@ fn vote_option_from_json(value: &Value) -> Result<VoteOption> {
     }
 }
 
-/// Decodes a `MsgExecuteContract.msg` from base64 and proves it is a JSON object.
+/// Decodes a `MsgExecuteContract.msg` from base64 and proves it is a JSON object that names its
+/// action.
 ///
 /// The check is not cosmetic. A CosmWasm `ExecuteMsg` is always a JSON object keyed by the
 /// action name, the Amino encoder re-parses these bytes and embeds them inline, and
 /// [`Msg::summary`] reads the top-level key to tell the user which action they are approving. A
 /// payload that is not a JSON object breaks all three: the Amino document would carry `{}` in
 /// place of the call, and the prompt would say "unknown action" while the Direct path signed
-/// something else entirely.
+/// something else entirely. An object with no key, or whose first key is not a plain name, breaks
+/// the last: the prompt cannot name the action, and the decoder would call the same bytes
+/// unknown. See [`contract_action`].
 fn contract_msg_from_json(value: &Value) -> Result<Vec<u8>> {
     let encoded = value.as_str().ok_or(CosmosError::Decode)?;
     let bytes = decode_base64(encoded)?;
     let parsed: Value = serde_json::from_slice(&bytes).map_err(|_| CosmosError::Decode)?;
-    if !parsed.is_object() {
+    if contract_action(&parsed).is_none() {
         return Err(CosmosError::Decode);
     }
     Ok(bytes)
@@ -1246,6 +1249,25 @@ mod tests {
             .unwrap_err(),
             CosmosError::Decode
         );
+        // An object that names no action, or one the prompt cannot quote: the decoder calls
+        // these unknown, so the wallet does not build them either.
+        for inner in [
+            "{}",
+            "{\"\u{202e}swap\u{2028}\u{2028}\":{}}",
+            "{\"\\u202eswap\":{}}",
+            r#"{"swap\" on cosmos1legit":{}}"#,
+            r#"{"swap now":{}}"#,
+        ] {
+            assert_eq!(
+                parse(
+                    "/cosmwasm.wasm.v1.MsgExecuteContract",
+                    execute_json(inner, json!([])),
+                )
+                .unwrap_err(),
+                CosmosError::Decode,
+                "{inner:?}"
+            );
+        }
         // The raw object, unencoded, is refused rather than guessed at: accepting both forms
         // would make the field's encoding ambiguous, and the two encoders disagree on it.
         assert_eq!(

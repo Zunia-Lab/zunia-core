@@ -219,6 +219,24 @@ fn the_duplicate_field_regressions_stay_refused() {
 }
 
 #[test]
+fn the_contract_action_regression_stays_unknown() {
+    // A call to Osmosis crosschain-swaps carrying 5,000 OSMO under the action key U+202E, "swap",
+    // U+2028, U+2028. The decoder quoted that key in the sentence naming the contract and the
+    // coins, where it reorders and breaks the line, and reported the call safe to sign. Nothing
+    // on chain checks the key before the contract reads it, so on a contract the requester owns
+    // such a call executes. The property allows any honest outcome, so this one is pinned here.
+    let name = "regression_bidi_in_contract_action";
+    let (_, bytes) = read_corpus("tx_decoder")
+        .into_iter()
+        .find(|(found, _)| found == name)
+        .unwrap_or_else(|| panic!("fuzz/corpus/tx_decoder/{name} is missing"));
+
+    let decoded = zunia_cosmos::decode_direct_sign_doc(&bytes).unwrap();
+    assert!(decoded.msgs[0].is_unknown(), "got {:?}", decoded.msgs[0]);
+    assert!(!decoded.is_safe_to_sign_without_blind_signing());
+}
+
+#[test]
 fn single_byte_flips_in_real_sign_docs_hold_their_properties() {
     // A dApp-supplied sign document that has been corrupted in transit, or crafted to look
     // almost valid, must still either decode honestly or be rejected. Never a panic, and never

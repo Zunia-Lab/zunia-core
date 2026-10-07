@@ -419,6 +419,33 @@ mod tests {
     }
 
     #[test]
+    fn a_contract_call_whose_action_cannot_be_named_is_unknown() {
+        // The security review's call, on the hub: 5,000 ATOM to a contract, under an action key
+        // of U+202E, "swap" and two U+2028. The extension must neither be told it is safe to
+        // sign nor be handed the key, in a sentence or in a detail.
+        let mut coin = ProtoWriter::new();
+        coin.string(1, "uatom").string(2, "5000000000");
+        let mut call = ProtoWriter::new();
+        call.string(1, FROM)
+            .string(2, CONTRACT)
+            .bytes(3, "{\"\u{202e}swap\u{2028}\u{2028}\":{}}".as_bytes())
+            .repeated_message(5, &[coin.into_bytes()]);
+        let tx = decoded_anys(&[("/cosmwasm.wasm.v1.MsgExecuteContract", call.as_bytes())]);
+        let summary = &tx.summaries()[0];
+        let payload = decoded_tx_payload(&tx);
+        assert_eq!(payload["safeWithoutBlindSigning"], json!(false));
+        assert_eq!(
+            payload["messages"],
+            json!([{
+                "typeUrl": "/cosmwasm.wasm.v1.MsgExecuteContract",
+                "summary": summary,
+                "unknown": true,
+            }])
+        );
+        assert!(!summary.contains(['\u{202e}', '\u{2028}']), "{summary:?}");
+    }
+
+    #[test]
     fn messages_follow_the_summaries_one_for_one() {
         let tx = decoded(
             vec![

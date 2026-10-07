@@ -31,11 +31,12 @@ use serde_json::Value;
 use crate::amount::Coin;
 use crate::error::{CosmosError, Result};
 use crate::msg::{
-    describe_hops, describe_out_hops, describe_out_split, describe_split, out_route_input,
-    route_output, split_input, split_out_total, split_output,
-    validate_split_route_swap_exact_amount_in, validate_split_route_swap_exact_amount_out,
-    validate_swap_exact_amount_in, validate_swap_exact_amount_out, SwapAmountInRoute,
-    SwapAmountInSplitRoute, SwapAmountOutRoute, SwapAmountOutSplitRoute, VoteOption,
+    contract_action, describe_hops, describe_out_hops, describe_out_split, describe_split,
+    is_plain_contract_action, out_route_input, route_output, split_input, split_out_total,
+    split_output, validate_split_route_swap_exact_amount_in,
+    validate_split_route_swap_exact_amount_out, validate_swap_exact_amount_in,
+    validate_swap_exact_amount_out, SwapAmountInRoute, SwapAmountInSplitRoute, SwapAmountOutRoute,
+    SwapAmountOutSplitRoute, VoteOption,
 };
 use crate::proto::{decode_fields, find_all, find_unique_field, require_unique};
 
@@ -84,7 +85,8 @@ pub enum DecodedMsg {
         contract: String,
         /// The contract message, parsed if it is valid JSON.
         msg: Option<Value>,
-        /// The top-level key, which is the action by CosmWasm convention.
+        /// The top-level key, which is the action by CosmWasm convention, when it is a plain
+        /// name. See [`contract_action`].
         action: Option<String>,
         funds: Vec<Coin>,
     },
@@ -189,7 +191,12 @@ impl DecodedMsg {
                 funds,
                 ..
             } => {
-                let action = action.as_deref().unwrap_or("an unreadable action");
+                // The decoder sets `action` only to a plain name. The filter holds a value built
+                // some other way to the same rule, so the sentence never quotes anything else.
+                let action = action
+                    .as_deref()
+                    .filter(|action| is_plain_contract_action(action))
+                    .unwrap_or("an unreadable action");
                 let funds_text = if funds.is_empty() {
                     String::new()
                 } else {
@@ -576,10 +583,9 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
                 .transpose()?
                 .unwrap_or_default();
             let parsed = serde_json::from_slice::<Value>(&raw).ok();
-            let action = parsed
-                .as_ref()
-                .and_then(|v| v.as_object())
-                .and_then(|m| m.keys().next().cloned());
+            // Unset unless the message leads with a plain name, and `is_complete` demotes a call
+            // without one.
+            let action = parsed.as_ref().and_then(contract_action).map(str::to_owned);
             DecodedMsg::ExecuteContract {
                 sender: string_at(1)?,
                 contract: string_at(2)?,
@@ -769,7 +775,10 @@ fn is_complete(msg: &DecodedMsg) -> bool {
         } => *proposal_id != 0 && option.is_some(),
         DecodedMsg::IbcTransfer { channel, token, .. } => !channel.is_empty() && token.is_some(),
         // A contract call whose payload will not parse cannot be described, and "execute an
-        // unreadable action" is the definition of blind signing.
+        // unreadable action" is the definition of blind signing. Nor can one whose action is
+        // not a plain name, which the decoder leaves unset: the prompt quotes the action and
+        // nothing on chain checks it, so a bidirectional override or a line separator in it
+        // would rewrite the sentence that names the contract and the coins.
         DecodedMsg::ExecuteContract { msg, action, .. } => msg.is_some() && action.is_some(),
         // The same rules the bridge builds under. A swap that breaks one either cannot execute
         // or is outside what this wallet signs, and neither is something to describe
@@ -2537,6 +2546,73 @@ mod tests {
             &execute_bytes(XCS, XCS, br#"{"recover":{}}"#),
         );
         assert!(decoded.is_unknown(), "a 32-byte sender was understood");
+    }
+
+    #[test]
+    fn a_contract_action_that_would_rewrite_the_prompt_is_not_understood() {
+        // Found in security review once 32-byte contracts decoded. Nothing on chain checks the
+        // action before the contract reads it, so on a contract the requester owns, a call like
+        // this one runs and keeps the 5,000 OSMO it carries. The decoder quoted the key as it was
+        // and reported the call safe to sign: U+202E reversed what followed it in the prompt, and
+        // U+2028 broke the line, which also hid the coins from the extension's reading of the
+        // sentence.
+        let call = |msg: &[u8]| {
+            let mut writer = ProtoWriter::new();
+            writer
+                .string(1, OSMO)
+                .string(2, XCS)
+                .bytes(3, msg)
+                .repeated_message(5, &[coin_bytes("uosmo", "5000000000")]);
+            decode_one("/cosmwasm.wasm.v1.MsgExecuteContract", writer.as_bytes())
+        };
+        let keyed = |key: &str| call(serde_json::json!({ key: {} }).to_string().as_bytes());
+
+        let too_long = "a".repeat(129);
+        for (label, key) in [
+            (
+                "the reported override and line separators",
+                "\u{202e}swap\u{2028}\u{2028}",
+            ),
+            ("a right-to-left override", "\u{202e}paws"),
+            ("an isolate", "swap\u{2066}"),
+            ("a paragraph separator", "swap\u{2029}"),
+            ("a zero-width space", "sw\u{200b}ap"),
+            ("a NUL", "swap\u{0}"),
+            ("a second line", "swap\nSend 1 uosmo to osmo1friend"),
+            ("a space", "swap now"),
+            ("a quote", "swap\" on osmo1legit"),
+            ("fullwidth letters", "ｓｗａｐ"),
+            ("an accented letter", "swäp"),
+            ("no name", ""),
+            ("129 letters", too_long.as_str()),
+        ] {
+            let decoded = keyed(key);
+            assert!(
+                decoded.is_unknown(),
+                "an action with {label} was understood: {decoded:?}"
+            );
+            assert!(decoded
+                .summary()
+                .starts_with("UNKNOWN ACTION: /cosmwasm.wasm.v1.MsgExecuteContract"));
+        }
+
+        // The key is read after JSON unescaping, so writing the override as a JSON escape changes
+        // nothing, and a plain name written after it does not stand in for it.
+        assert!(call(b"{\"\\u202eswap\":{}}").is_unknown());
+        assert!(call(b"{\"\\u202eswap\":{},\"swap\":{}}").is_unknown());
+
+        // The names contracts use read as before.
+        for key in [
+            "swap",
+            "transfer_nft",
+            "executeSwapOperations",
+            "swap-exact-in",
+        ] {
+            assert_eq!(
+                keyed(key).summary(),
+                format!("Execute \"{key}\" on {XCS} sending 5000000000 uosmo")
+            );
+        }
     }
 
     /* ------------------------------------------------------------------------------------ *

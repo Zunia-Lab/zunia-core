@@ -41,6 +41,14 @@
 //! built here, only described when a dApp hands them over (see [`crate::decode`]). The decoder
 //! holds them to the same kind of rules first, in [`validate_swap_exact_amount_out`] and
 //! [`validate_split_route_swap_exact_amount_out`].
+//!
+//! # Contract calls
+//!
+//! A contract call is described by its action, the top-level key of its message, and the prompt
+//! quotes it: `Execute "swap" on osmo1… sending 5000000 uosmo`. Nothing on chain checks that key
+//! before the contract reads it, so the crate names it only when it is a plain name, through
+//! [`contract_action`], wherever it words a contract call: [`Msg::summary`], the JSON bridge and
+//! the decoder.
 
 use serde_json::{json, Value};
 
@@ -500,6 +508,48 @@ fn encode_hops(hops: &[SwapAmountInRoute]) -> Vec<Vec<u8>> {
 
 fn amino_hops(hops: &[SwapAmountInRoute]) -> Value {
     Value::Array(hops.iter().map(SwapAmountInRoute::encode_amino).collect())
+}
+
+/// The longest contract action a signing prompt will name, in bytes.
+///
+/// A bound, not a convention. An action is a name, and a key several kilobytes long would push
+/// the contract and the coins out of the sentence that is there to show them.
+pub const MAX_CONTRACT_ACTION_LEN: usize = 128;
+
+/// Whether `action`, the top-level key of a CosmWasm contract message, can be named in a signing
+/// prompt.
+///
+/// The prompt quotes it: `Execute "{action}" on {contract} sending {coins}`. Nothing on chain
+/// checks it, since wasmd hands the message to the contract untouched, so on a contract the
+/// requester controls it is free text inside a sentence the user trusts. A bidirectional override
+/// reorders what follows it, so the contract and the coins read other than the bytes say; U+2028
+/// breaks the sentence in two; a quote ends the action early and passes the rest off as the
+/// wallet's own words.
+///
+/// So an action is a plain name or it is not named: 1 to [`MAX_CONTRACT_ACTION_LEN`] ASCII
+/// letters, digits, `_` and `-`. Those are the characters an ASCII `ExecuteMsg` variant is spelled
+/// with under each of serde's renaming rules: `snake_case`, which is the CosmWasm convention,
+/// `camelCase`, `kebab-case` and the rest.
+pub fn is_plain_contract_action(action: &str) -> bool {
+    (1..=MAX_CONTRACT_ACTION_LEN).contains(&action.len())
+        && action
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+/// The action a contract message is described by: its first top-level key, when that key is a
+/// plain name ([`is_plain_contract_action`]).
+///
+/// `None` for a message that is not a JSON object, has no key, or leads with a key that is not a
+/// plain name. Such a call cannot be described, so the decoder demotes it to unknown and the JSON
+/// bridge refuses to build it. "First" means in the order the message was written, which
+/// `serde_json` keeps here (`preserve_order`).
+pub fn contract_action(msg: &Value) -> Option<&str> {
+    msg.as_object()?
+        .keys()
+        .next()
+        .map(String::as_str)
+        .filter(|action| is_plain_contract_action(action))
 }
 
 /// Every message the wallet can build and sign.
@@ -964,11 +1014,13 @@ impl Msg {
                 ..
             } => {
                 // The top-level key of a CosmWasm ExecuteMsg is the action name by convention,
-                // so naming it turns "execute a contract" into "swap on this contract".
-                let action = serde_json::from_slice::<Value>(msg)
-                    .ok()
-                    .and_then(|v| v.as_object().and_then(|m| m.keys().next().cloned()))
-                    .unwrap_or_else(|| "unknown action".to_owned());
+                // so naming it turns "execute a contract" into "swap on this contract". Only a
+                // plain name is quoted; the bridge refuses to build a call without one.
+                let parsed = serde_json::from_slice::<Value>(msg).ok();
+                let action = parsed
+                    .as_ref()
+                    .and_then(contract_action)
+                    .unwrap_or("unknown action");
                 let funds_text = if funds.is_empty() {
                     String::new()
                 } else {
@@ -1995,6 +2047,78 @@ mod tests {
             option: VoteOption::Yes,
         };
         assert_eq!(vote.summary(), "Vote Yes on proposal 1");
+    }
+
+    #[test]
+    fn a_contract_action_is_named_only_when_it_is_a_plain_name() {
+        // Every serde renaming of a variant, and the length bound's edge.
+        let longest = "a".repeat(MAX_CONTRACT_ACTION_LEN);
+        for action in [
+            "swap",
+            "transfer_nft",
+            "Swap",
+            "executeSwapOperations",
+            "SWAP_EXACT_IN",
+            "swap-exact-in",
+            "SWAP-EXACT-IN",
+            "v2",
+            longest.as_str(),
+        ] {
+            assert!(is_plain_contract_action(action), "{action:?} was refused");
+        }
+
+        // What reorders, splits or hides text, what ends the quotes early, and what only looks
+        // like a plain name.
+        let too_long = "a".repeat(MAX_CONTRACT_ACTION_LEN + 1);
+        for action in [
+            "",
+            "\u{202e}swap\u{2028}\u{2028}",
+            "swap\u{2066}",
+            "swap\u{2029}",
+            "sw\u{200b}ap",
+            "swap\u{0}",
+            "swap\n",
+            "swap now",
+            "swap\" on osmo1legit",
+            "swap.v2",
+            "ｓｗａｐ",
+            "swäp",
+            too_long.as_str(),
+        ] {
+            assert!(!is_plain_contract_action(action), "{action:?} was accepted");
+        }
+
+        // The first key, in the order it was written, and nothing that is not an object.
+        let msg: Value = serde_json::from_str(r#"{"swap":{},"recover":{}}"#).unwrap();
+        assert_eq!(contract_action(&msg), Some("swap"));
+        let msg: Value = serde_json::from_str("{\"\\u202eswap\":{},\"swap\":{}}").unwrap();
+        assert_eq!(contract_action(&msg), None);
+        for msg in [json!({}), json!([]), json!("swap"), json!(null)] {
+            assert_eq!(contract_action(&msg), None, "{msg}");
+        }
+    }
+
+    #[test]
+    fn a_contract_action_that_is_not_a_plain_name_is_not_quoted() {
+        // A typed Msg can skip the bridge, which refuses these; the sentence still does not quote
+        // them.
+        let call = |msg: &str| Msg::ExecuteContract {
+            sender: "cosmos1s".to_owned(),
+            contract: "cosmos1c".to_owned(),
+            msg: msg.as_bytes().to_vec(),
+            funds: vec![Coin::new("uatom", "5").unwrap()],
+        };
+        for msg in [
+            "{\"\u{202e}swap\u{2028}\u{2028}\":{}}",
+            r#"{"swap\" on cosmos1legit":{}}"#,
+            "{}",
+        ] {
+            assert_eq!(
+                call(msg).summary(),
+                "Execute \"unknown action\" on cosmos1c sending 5 uatom",
+                "{msg:?}"
+            );
+        }
     }
 
     #[test]

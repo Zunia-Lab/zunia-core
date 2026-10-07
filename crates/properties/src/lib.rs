@@ -18,7 +18,7 @@
 //! Not published: this is test infrastructure.
 
 use zunia_cosmos::proto::{decode_fields, find_all, find_field, Field};
-use zunia_cosmos::{decode_direct_sign_doc, DecodedTx};
+use zunia_cosmos::{decode_direct_sign_doc, DecodedMsg, DecodedTx};
 use zunia_kernel::{
     convert_prefix, decode_bech32, validate_address, validate_eth_address, AddressScheme,
     KeyringEnvelope,
@@ -82,6 +82,27 @@ pub fn check_tx_decoder(data: &[u8]) {
                     "an address containing byte {byte:#04x} reached the UI: {address:?}"
                 );
             }
+        }
+    }
+
+    // A contract call is described by its action, the top-level key of its message, which the
+    // prompt quotes and nothing on chain checks. A key that does not render as itself rewrites
+    // the sentence around it: a bidirectional override reorders the contract and the coins, a
+    // line separator breaks the sentence in two, and a quote ends the action early and passes
+    // the rest off as the wallet's words. So an understood contract call names an action of
+    // printable ASCII with no space and no quote.
+    for msg in &decoded.msgs {
+        if let DecodedMsg::ExecuteContract { action, .. } = msg {
+            let action = action
+                .as_deref()
+                .expect("an understood contract call reached the UI without an action");
+            assert!(
+                !action.is_empty()
+                    && action
+                        .bytes()
+                        .all(|byte| (0x21..=0x7e).contains(&byte) && byte != b'"'),
+                "a contract action that does not render as itself reached the UI: {action:?}"
+            );
         }
     }
 
