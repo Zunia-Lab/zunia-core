@@ -30,10 +30,10 @@ jobs:
           - address_parser
           - keyring_envelope
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check out zunia-chain-registry
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Zunia-Lab/zunia-chain-registry
           path: .registry
