@@ -1,6 +1,6 @@
 name: zunia_core
 description: Dart bindings for the Zunia wallet kernel. Loads prebuilt native libraries from GitHub Releases; does not require a Rust toolchain at app-build time.
-version: 0.1.0
+version: 0.1.1
 publish_to: none
 
 environment:
