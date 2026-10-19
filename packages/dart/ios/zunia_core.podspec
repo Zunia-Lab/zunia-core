@@ -27,4 +27,6 @@ Pod::Spec.new do |s|
     'OTHER_LDFLAGS' => '$(inherited) -force_load "${PODS_TARGET_SRCROOT}/Frameworks/ZuniaCore.xcframework/$(ZUNIA_FFI_SLICE)/libzunia_ffi.a"',
   }
   s.preserve_paths = 'Frameworks/**/*'
+  # Apple asks every framework that references "required reason" APIs to say why.
+  s.resource_bundles = { 'zunia_core_privacy' => ['Resources/PrivacyInfo.xcprivacy'] }
 end
