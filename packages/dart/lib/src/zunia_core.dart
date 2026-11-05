@@ -173,6 +173,23 @@ typedef _DeriveDart = Pointer<Utf8> Function(
   int,
 );
 
+/// `phrase, passphrase, chain_json, account_index, sign_bytes_hex`.
+typedef _SignCosmosNative = Pointer<Utf8> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Uint32,
+  Pointer<Utf8>,
+);
+typedef _SignCosmosDart = Pointer<Utf8> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  int,
+  Pointer<Utf8>,
+);
+typedef _DecodeNative = Pointer<Utf8> Function(Pointer<Utf8>);
+
 /// `chain_id, msgs_json, fee_json, memo, account_number, sequence, public_key_hex,
 /// eth_key_type, mode`. Shared by `zunia_build_sign_bytes` and `zunia_preview_tx`.
 typedef _SignBytesNative = Pointer<Utf8> Function(
@@ -296,6 +313,11 @@ class ZuniaCore {
         _open = lib.lookupFunction<_OpenNative, _OpenNative>('zunia_open_keyring'),
         _derive =
             lib.lookupFunction<_DeriveNative, _DeriveDart>('zunia_derive_address'),
+        _signCosmos = lib.lookupFunction<_SignCosmosNative, _SignCosmosDart>(
+          'zunia_sign_cosmos',
+        ),
+        _decodeDirectTx =
+            lib.lookupFunction<_DecodeNative, _DecodeNative>('zunia_decode_direct_tx'),
         _buildSignBytes = lib.lookupFunction<_SignBytesNative, _SignBytesDart>(
           'zunia_build_sign_bytes',
         ),
@@ -318,6 +340,8 @@ class ZuniaCore {
   final _SealNative _seal;
   final _OpenNative _open;
   final _DeriveDart _derive;
+  final _SignCosmosDart _signCosmos;
+  final _DecodeNative _decodeDirectTx;
   final _SignBytesDart _buildSignBytes;
   final _AssembleDart _assembleTxRaw;
   final _SimulateDart _buildSimulateTx;
@@ -340,6 +364,10 @@ class ZuniaCore {
     }
     return ZuniaCore._(lib);
   }
+
+  /// Opens a kernel built for the host at [path]: a test run on a developer machine, which has
+  /// no app bundle to find the library in.
+  static ZuniaCore openPath(String path) => ZuniaCore._(DynamicLibrary.open(path));
 
   String get kernelVersion => _read(_version());
 
@@ -375,6 +403,49 @@ class ZuniaCore {
         phrase,
         (p) => _withSecret(passphrase, (pp) => _read(_derive(p, pp, c, accountIndex))),
       );
+    });
+    return jsonDecode(raw) as Map<String, dynamic>;
+  }
+
+  /// Signs bytes a dApp handed over: a Direct `SignDoc`, Amino sign bytes, or an ADR-036
+  /// document. Returns the 64-byte `r||s` signature, hex encoded.
+  ///
+  /// The kernel hashes before signing: SHA-256, or keccak256 on a chain whose descriptor
+  /// advertises `ethsecp256k1`, so [chainJson] decides the scheme and the caller cannot pick
+  /// the wrong one. Nothing here checks what the bytes say; that is [decodeDirectTx]'s job, and
+  /// it has to run before the user is asked.
+  String signCosmos({
+    required String phrase,
+    String passphrase = '',
+    required String chainJson,
+    int accountIndex = 0,
+    required String signBytesHex,
+  }) {
+    return using((arena) {
+      final c = chainJson.toNativeUtf8(allocator: arena);
+      final b = signBytesHex.toNativeUtf8(allocator: arena);
+      return _withSecret(
+        phrase,
+        (p) => _withSecret(
+          passphrase,
+          (pp) => _read(_signCosmos(p, pp, c, accountIndex, b)),
+        ),
+      );
+    });
+  }
+
+  /// Describes `SIGN_MODE_DIRECT` bytes a dApp handed over: payload v2, the object the
+  /// extension's `decodeDirectTx` returns, built by the same Rust function.
+  ///
+  /// `{ chainId, memo, hasUnknownMsgs, safeWithoutBlindSigning, summaries, addresses,
+  /// accountNumber, sequence, timeoutHeight, fee: { amount, gasLimit }, messages: [{ typeUrl,
+  /// summary, unknown, recipient?, detail? }] }`
+  ///
+  /// Throws when the document itself cannot be trusted, such as a singular field written twice.
+  Map<String, dynamic> decodeDirectTx({required String signDocHex}) {
+    final raw = using((arena) {
+      final d = signDocHex.toNativeUtf8(allocator: arena);
+      return _read(_decodeDirectTx(d));
     });
     return jsonDecode(raw) as Map<String, dynamic>;
   }
