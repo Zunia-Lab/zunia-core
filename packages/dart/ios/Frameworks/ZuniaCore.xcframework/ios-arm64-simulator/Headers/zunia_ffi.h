@@ -58,13 +58,17 @@ char *zunia_build_bank_send_direct(const char *chain_id, const char *from, const
  *
  * For /cosmwasm.wasm.v1.MsgExecuteContract, value.msg is a BASE64 string of the contract
  * JSON. `mode` is "direct" or "amino".
+ *
+ * `eth_pub_key_type_url` is the chain's ethsecp256k1 type URL when it is not Ethermint's
+ * (Injective, cosmos/evm, Initia); NULL or "" means Ethermint's. It must be the one
+ * zunia_sign_tx reads off the chain document, or the node cannot decode the transaction.
  */
 
 /* Hex sign bytes. Pure: no key material crosses this call. */
 char *zunia_build_sign_bytes(const char *chain_id, const char *msgs_json, const char *fee_json,
                              const char *memo, uint64_t account_number, uint64_t sequence,
                              const char *public_key_hex, uint8_t eth_key_type,
-                             const char *mode);
+                             const char *mode, const char *eth_pub_key_type_url);
 
 /*
  * Hex TxRaw for a signature made over zunia_build_sign_bytes' output with the same
@@ -74,13 +78,13 @@ char *zunia_build_sign_bytes(const char *chain_id, const char *msgs_json, const 
 char *zunia_assemble_tx_raw(const char *chain_id, const char *msgs_json, const char *fee_json,
                             const char *memo, uint64_t account_number, uint64_t sequence,
                             const char *public_key_hex, uint8_t eth_key_type, const char *mode,
-                            const char *signature_hex);
+                            const char *signature_hex, const char *eth_pub_key_type_url);
 
 /* Hex TxRaw with a 64-byte zero signature, for POST /cosmos/tx/v1beta1/simulate. */
 char *zunia_build_simulate_tx(const char *chain_id, const char *msgs_json,
                               const char *fee_json, const char *memo, uint64_t account_number,
                               uint64_t sequence, const char *public_key_hex,
-                              uint8_t eth_key_type);
+                              uint8_t eth_key_type, const char *eth_pub_key_type_url);
 
 /*
  * derive -> sign bytes -> sign -> assemble. Returns a hex TxRaw. Holds the mnemonic and
@@ -95,7 +99,8 @@ char *zunia_sign_tx(const char *phrase, const char *passphrase, const char *chai
 /* JSON describing what would be signed, without signing it. Pure. gasLimit is a string. */
 char *zunia_preview_tx(const char *chain_id, const char *msgs_json, const char *fee_json,
                        const char *memo, uint64_t account_number, uint64_t sequence,
-                       const char *public_key_hex, uint8_t eth_key_type, const char *mode);
+                       const char *public_key_hex, uint8_t eth_key_type, const char *mode,
+                       const char *eth_pub_key_type_url);
 
 #ifdef __cplusplus
 }
