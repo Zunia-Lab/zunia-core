@@ -348,6 +348,7 @@ pub extern "C" fn zunia_build_bank_send_direct(
             sequence,
             public_key_hex,
             eth_key_type != 0,
+            "",
         )?;
         Ok(hex::encode(
             tx.sign_bytes(&signer, SignMode::Direct)
@@ -379,19 +380,23 @@ fn signer_data(
     sequence: u64,
     public_key_hex: &str,
     eth_key_type: bool,
+    eth_pub_key_type_url: &str,
 ) -> Result<SignerData, String> {
     let public_key =
         hex::decode(public_key_hex.trim_start_matches("0x")).map_err(|e| e.to_string())?;
+    let eth_pub_key_type_url = eth_pub_key_type_url.trim();
     Ok(SignerData {
         chain_id: chain_id.to_owned(),
         account_number,
         sequence,
         public_key,
         eth_key_type,
-        // Hosts that only pass the boolean get the Ethermint type URL. `zunia_sign_tx`
-        // reads `ethPubKeyTypeUrl` off the chain document, which is how Injective
-        // advertises its own key type without a second argument.
-        eth_pub_key_type_url: None,
+        // Empty (or a null pointer) means the Ethermint type URL. Injective needs its own,
+        // `/injective.crypto.v1beta1.ethsecp256k1.PubKey`, here exactly as `zunia_sign_tx`
+        // reads it off the chain document: a simulation or a preview built with the Ethermint
+        // URL is a different transaction, and Injective refuses to decode it.
+        eth_pub_key_type_url: (!eth_pub_key_type_url.is_empty())
+            .then(|| eth_pub_key_type_url.to_owned()),
     })
 }
 
@@ -446,6 +451,7 @@ pub extern "C" fn zunia_build_sign_bytes(
     public_key_hex: *const c_char,
     eth_key_type: u8,
     mode: *const c_char,
+    eth_pub_key_type_url: *const c_char,
 ) -> *mut c_char {
     (|| -> Result<String, String> {
         let chain_id = from_cstr(chain_id)?;
@@ -453,6 +459,7 @@ pub extern "C" fn zunia_build_sign_bytes(
         let fee_json = from_cstr(fee_json)?;
         let memo = optional_cstr(memo)?;
         let public_key_hex = from_cstr(public_key_hex)?;
+        let eth_pub_key_type_url = optional_cstr(eth_pub_key_type_url)?;
         let mode = sign_mode_from_str(from_cstr(mode)?).map_err(|e| e.to_string())?;
 
         let tx = unsigned_tx(msgs_json, fee_json, memo)?;
@@ -462,6 +469,7 @@ pub extern "C" fn zunia_build_sign_bytes(
             sequence,
             public_key_hex,
             eth_key_type != 0,
+            eth_pub_key_type_url,
         )?;
         Ok(hex::encode(
             tx.sign_bytes(&signer, mode).map_err(|e| e.to_string())?,
@@ -490,6 +498,7 @@ pub extern "C" fn zunia_assemble_tx_raw(
     eth_key_type: u8,
     mode: *const c_char,
     signature_hex: *const c_char,
+    eth_pub_key_type_url: *const c_char,
 ) -> *mut c_char {
     (|| -> Result<String, String> {
         let chain_id = from_cstr(chain_id)?;
@@ -497,6 +506,7 @@ pub extern "C" fn zunia_assemble_tx_raw(
         let fee_json = from_cstr(fee_json)?;
         let memo = optional_cstr(memo)?;
         let public_key_hex = from_cstr(public_key_hex)?;
+        let eth_pub_key_type_url = optional_cstr(eth_pub_key_type_url)?;
         let mode = sign_mode_from_str(from_cstr(mode)?).map_err(|e| e.to_string())?;
         let signature = hex::decode(from_cstr(signature_hex)?.trim_start_matches("0x"))
             .map_err(|e| e.to_string())?;
@@ -517,6 +527,7 @@ pub extern "C" fn zunia_assemble_tx_raw(
             sequence,
             public_key_hex,
             eth_key_type != 0,
+            eth_pub_key_type_url,
         )?;
         Ok(hex::encode(
             tx.into_tx_raw(&signer, mode, &signature)
@@ -546,6 +557,7 @@ pub extern "C" fn zunia_build_simulate_tx(
     sequence: u64,
     public_key_hex: *const c_char,
     eth_key_type: u8,
+    eth_pub_key_type_url: *const c_char,
 ) -> *mut c_char {
     (|| -> Result<String, String> {
         let chain_id = from_cstr(chain_id)?;
@@ -553,6 +565,7 @@ pub extern "C" fn zunia_build_simulate_tx(
         let fee_json = from_cstr(fee_json)?;
         let memo = optional_cstr(memo)?;
         let public_key_hex = from_cstr(public_key_hex)?;
+        let eth_pub_key_type_url = optional_cstr(eth_pub_key_type_url)?;
 
         let tx = unsigned_tx(msgs_json, fee_json, memo)?;
         let signer = signer_data(
@@ -561,6 +574,7 @@ pub extern "C" fn zunia_build_simulate_tx(
             sequence,
             public_key_hex,
             eth_key_type != 0,
+            eth_pub_key_type_url,
         )?;
         Ok(hex::encode(
             tx.into_tx_raw(&signer, SignMode::Direct, &SIMULATION_SIGNATURE)
@@ -662,6 +676,7 @@ pub extern "C" fn zunia_preview_tx(
     public_key_hex: *const c_char,
     eth_key_type: u8,
     mode: *const c_char,
+    eth_pub_key_type_url: *const c_char,
 ) -> *mut c_char {
     (|| -> Result<String, String> {
         let chain_id = from_cstr(chain_id)?;
@@ -669,6 +684,7 @@ pub extern "C" fn zunia_preview_tx(
         let fee_json = from_cstr(fee_json)?;
         let memo = optional_cstr(memo)?;
         let public_key_hex = from_cstr(public_key_hex)?;
+        let eth_pub_key_type_url = optional_cstr(eth_pub_key_type_url)?;
         let mode = sign_mode_from_str(from_cstr(mode)?).map_err(|e| e.to_string())?;
 
         let tx = unsigned_tx(msgs_json, fee_json, memo)?;
@@ -678,6 +694,7 @@ pub extern "C" fn zunia_preview_tx(
             sequence,
             public_key_hex,
             eth_key_type != 0,
+            eth_pub_key_type_url,
         )?;
         let preview = tx.preview(&signer, mode).map_err(|e| e.to_string())?;
         Ok(preview_json(&tx, &preview))
@@ -936,6 +953,7 @@ mod tests {
             pubkey.as_ptr(),
             0,
             mode.as_ptr(),
+            ptr::null(),
         ))
     }
 
@@ -958,6 +976,7 @@ mod tests {
             0,
             mode.as_ptr(),
             signature.as_ptr(),
+            ptr::null(),
         ))
     }
 
@@ -976,6 +995,7 @@ mod tests {
             vectors["signer"]["sequence"].as_u64().unwrap(),
             pubkey.as_ptr(),
             0,
+            ptr::null(),
         ))
     }
 
@@ -996,6 +1016,7 @@ mod tests {
             pubkey.as_ptr(),
             0,
             mode.as_ptr(),
+            ptr::null(),
         ))
     }
 
@@ -1542,6 +1563,7 @@ mod tests {
                 pubkey.as_ptr(),
                 0,
                 mode.as_ptr(),
+                ptr::null(),
             )),
             "fee or gas limit is invalid",
         );
@@ -1622,6 +1644,7 @@ mod tests {
                 args[3],
                 0,
                 args[4],
+                ptr::null(),
             ));
             assert_error(&value, "null pointer");
             assert!(value.contains("null pointer"), "{label} was not checked");
@@ -1640,6 +1663,7 @@ mod tests {
                 pubkey.as_ptr(),
                 0,
                 mode.as_ptr(),
+                ptr::null(),
             )),
             sign_bytes(&vectors, &envelope("msg_send", &vectors), "", "direct")
         );
@@ -1656,6 +1680,7 @@ mod tests {
                 pubkey.as_ptr(),
                 0,
                 mode.as_ptr(),
+                ptr::null(),
             )),
             "null pointer",
         );
@@ -1671,6 +1696,7 @@ mod tests {
                 0,
                 mode.as_ptr(),
                 ptr::null(),
+                ptr::null(),
             )),
             "null pointer",
         );
@@ -1684,6 +1710,7 @@ mod tests {
                 0,
                 ptr::null(),
                 0,
+                ptr::null(),
             )),
             "null pointer",
         );
@@ -1738,5 +1765,82 @@ mod tests {
             )),
             sign_bytes(&vectors, &envelope("msg_send", &vectors), "", "direct")
         );
+    }
+
+    /// Injective decodes only its own `ethsecp256k1` type URL, so the simulation, the preview
+    /// and the sign bytes must all carry the one `zunia_sign_tx` signs with. Before the URL
+    /// was a parameter they carried Ethermint's, and Injective answered the simulation with
+    /// "unable to resolve type URL /ethermint.crypto.v1.ethsecp256k1.PubKey".
+    #[test]
+    fn eth_pub_key_type_url_reaches_simulation_preview_and_sign_bytes() {
+        let vectors = vectors();
+        let chain_id = c("injective-1");
+        let msgs = c(&envelope("msg_send", &vectors));
+        let fee = c(&fee_json(&vectors));
+        let memo = c("");
+        let pubkey = c(text(&vectors["key"]["pubkey_compressed_hex"]));
+        let direct = c("direct");
+        let injective = "/injective.crypto.v1beta1.ethsecp256k1.PubKey";
+        let ethermint = "/ethermint.crypto.v1.ethsecp256k1.PubKey";
+        let url = c(injective);
+        let empty = c("");
+
+        let simulate = |type_url: *const c_char| {
+            read(zunia_build_simulate_tx(
+                chain_id.as_ptr(),
+                msgs.as_ptr(),
+                fee.as_ptr(),
+                memo.as_ptr(),
+                7,
+                3,
+                pubkey.as_ptr(),
+                1,
+                type_url,
+            ))
+        };
+        let carries = |tx_hex: &str, type_url: &str| tx_hex.contains(&hex::encode(type_url));
+
+        let with_url = simulate(url.as_ptr());
+        assert!(!with_url.starts_with("error:"), "{with_url}");
+        assert!(carries(&with_url, injective));
+        assert!(!carries(&with_url, ethermint));
+        // A null pointer and an empty string both mean the Ethermint default.
+        assert!(carries(&simulate(ptr::null()), ethermint));
+        assert!(carries(&simulate(empty.as_ptr()), ethermint));
+
+        let sign_bytes = |type_url: *const c_char| {
+            read(zunia_build_sign_bytes(
+                chain_id.as_ptr(),
+                msgs.as_ptr(),
+                fee.as_ptr(),
+                memo.as_ptr(),
+                7,
+                3,
+                pubkey.as_ptr(),
+                1,
+                direct.as_ptr(),
+                type_url,
+            ))
+        };
+        let injective_bytes = sign_bytes(url.as_ptr());
+        assert!(carries(&injective_bytes, injective));
+        assert_ne!(injective_bytes, sign_bytes(ptr::null()));
+
+        // The preview hashes the same document the kernel will sign.
+        let preview: Value = serde_json::from_str(&read(zunia_preview_tx(
+            chain_id.as_ptr(),
+            msgs.as_ptr(),
+            fee.as_ptr(),
+            memo.as_ptr(),
+            7,
+            3,
+            pubkey.as_ptr(),
+            1,
+            direct.as_ptr(),
+            url.as_ptr(),
+        )))
+        .unwrap();
+        let expected = hex::encode(Sha256::digest(hex::decode(&injective_bytes).unwrap()));
+        assert_eq!(text(&preview["signBytesHash"]), expected);
     }
 }

@@ -191,7 +191,8 @@ typedef _SignCosmosDart = Pointer<Utf8> Function(
 typedef _DecodeNative = Pointer<Utf8> Function(Pointer<Utf8>);
 
 /// `chain_id, msgs_json, fee_json, memo, account_number, sequence, public_key_hex,
-/// eth_key_type, mode`. Shared by `zunia_build_sign_bytes` and `zunia_preview_tx`.
+/// eth_key_type, mode, eth_pub_key_type_url`. Shared by `zunia_build_sign_bytes` and
+/// `zunia_preview_tx`.
 typedef _SignBytesNative = Pointer<Utf8> Function(
   Pointer<Utf8>,
   Pointer<Utf8>,
@@ -201,6 +202,7 @@ typedef _SignBytesNative = Pointer<Utf8> Function(
   Uint64,
   Pointer<Utf8>,
   Uint8,
+  Pointer<Utf8>,
   Pointer<Utf8>,
 );
 typedef _SignBytesDart = Pointer<Utf8> Function(
@@ -213,9 +215,10 @@ typedef _SignBytesDart = Pointer<Utf8> Function(
   Pointer<Utf8>,
   int,
   Pointer<Utf8>,
+  Pointer<Utf8>,
 );
 
-/// The same, plus `signature_hex`.
+/// The same, with `signature_hex` before the type URL.
 typedef _AssembleNative = Pointer<Utf8> Function(
   Pointer<Utf8>,
   Pointer<Utf8>,
@@ -225,6 +228,7 @@ typedef _AssembleNative = Pointer<Utf8> Function(
   Uint64,
   Pointer<Utf8>,
   Uint8,
+  Pointer<Utf8>,
   Pointer<Utf8>,
   Pointer<Utf8>,
 );
@@ -239,9 +243,10 @@ typedef _AssembleDart = Pointer<Utf8> Function(
   int,
   Pointer<Utf8>,
   Pointer<Utf8>,
+  Pointer<Utf8>,
 );
 
-/// The same without a mode, because a simulation is always Direct.
+/// The same without a mode or a signature, because a simulation is always Direct.
 typedef _SimulateNative = Pointer<Utf8> Function(
   Pointer<Utf8>,
   Pointer<Utf8>,
@@ -251,6 +256,7 @@ typedef _SimulateNative = Pointer<Utf8> Function(
   Uint64,
   Pointer<Utf8>,
   Uint8,
+  Pointer<Utf8>,
 );
 typedef _SimulateDart = Pointer<Utf8> Function(
   Pointer<Utf8>,
@@ -261,6 +267,7 @@ typedef _SimulateDart = Pointer<Utf8> Function(
   int,
   Pointer<Utf8>,
   int,
+  Pointer<Utf8>,
 );
 
 /// `phrase, passphrase, chain_json, account_index, chain_id, msgs_json, fee_json, memo,
@@ -457,6 +464,11 @@ class ZuniaCore {
   /// snake_case fields and every amount a decimal string.
   ///
   /// [mode] is required, not defaulted; see [ZuniaSignMode].
+  ///
+  /// [ethPubKeyTypeUrl] is the chain's `ethsecp256k1` type URL when it is not Ethermint's
+  /// (Injective, cosmos/evm, Initia): the one [signTx] reads from the chain document, and the
+  /// same value must reach [assembleTxRaw], [buildSimulateTx] and [previewTx]. Null means
+  /// Ethermint's. A node refuses to decode a transaction carrying a type it does not register.
   String buildSignBytes({
     required String chainId,
     required List<Map<String, dynamic>> msgs,
@@ -466,10 +478,11 @@ class ZuniaCore {
     required int sequence,
     required String publicKeyHex,
     bool ethKeyType = false,
+    String? ethPubKeyTypeUrl,
     required ZuniaSignMode mode,
   }) {
     return using((arena) {
-      final args = _TxArgs(arena, chainId, msgs, fee, memo, publicKeyHex);
+      final args = _TxArgs(arena, chainId, msgs, fee, memo, publicKeyHex, ethPubKeyTypeUrl);
       final m = mode.wire.toNativeUtf8(allocator: arena);
       return _read(_buildSignBytes(
         args.chainId,
@@ -481,6 +494,7 @@ class ZuniaCore {
         args.publicKey,
         ethKeyType ? 1 : 0,
         m,
+        args.ethPubKeyTypeUrl,
       ));
     });
   }
@@ -502,11 +516,12 @@ class ZuniaCore {
     required int sequence,
     required String publicKeyHex,
     bool ethKeyType = false,
+    String? ethPubKeyTypeUrl,
     required ZuniaSignMode mode,
     required String signatureHex,
   }) {
     return using((arena) {
-      final args = _TxArgs(arena, chainId, msgs, fee, memo, publicKeyHex);
+      final args = _TxArgs(arena, chainId, msgs, fee, memo, publicKeyHex, ethPubKeyTypeUrl);
       final m = mode.wire.toNativeUtf8(allocator: arena);
       final sig = signatureHex.toNativeUtf8(allocator: arena);
       return _read(_assembleTxRaw(
@@ -520,6 +535,7 @@ class ZuniaCore {
         ethKeyType ? 1 : 0,
         m,
         sig,
+        args.ethPubKeyTypeUrl,
       ));
     });
   }
@@ -539,9 +555,10 @@ class ZuniaCore {
     required int sequence,
     required String publicKeyHex,
     bool ethKeyType = false,
+    String? ethPubKeyTypeUrl,
   }) {
     return using((arena) {
-      final args = _TxArgs(arena, chainId, msgs, fee, memo, publicKeyHex);
+      final args = _TxArgs(arena, chainId, msgs, fee, memo, publicKeyHex, ethPubKeyTypeUrl);
       return _read(_buildSimulateTx(
         args.chainId,
         args.msgs,
@@ -551,6 +568,7 @@ class ZuniaCore {
         sequence,
         args.publicKey,
         ethKeyType ? 1 : 0,
+        args.ethPubKeyTypeUrl,
       ));
     });
   }
@@ -616,10 +634,11 @@ class ZuniaCore {
     required int sequence,
     required String publicKeyHex,
     bool ethKeyType = false,
+    String? ethPubKeyTypeUrl,
     required ZuniaSignMode mode,
   }) {
     final raw = using((arena) {
-      final args = _TxArgs(arena, chainId, msgs, fee, memo, publicKeyHex);
+      final args = _TxArgs(arena, chainId, msgs, fee, memo, publicKeyHex, ethPubKeyTypeUrl);
       final m = mode.wire.toNativeUtf8(allocator: arena);
       return _read(_previewTx(
         args.chainId,
@@ -631,6 +650,7 @@ class ZuniaCore {
         args.publicKey,
         ethKeyType ? 1 : 0,
         m,
+        args.ethPubKeyTypeUrl,
       ));
     });
     return ZuniaSigningPreview.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -688,16 +708,21 @@ class _TxArgs {
     List<Map<String, dynamic>> msgsValue,
     ZuniaFee feeValue,
     String memoValue,
-    String publicKeyHexValue,
-  )   : chainId = chainIdValue.toNativeUtf8(allocator: arena),
+    String publicKeyHexValue, [
+    String? ethPubKeyTypeUrlValue,
+  ])  : chainId = chainIdValue.toNativeUtf8(allocator: arena),
         msgs = jsonEncode(msgsValue).toNativeUtf8(allocator: arena),
         fee = jsonEncode(feeValue.toJson()).toNativeUtf8(allocator: arena),
         memo = memoValue.toNativeUtf8(allocator: arena),
-        publicKey = publicKeyHexValue.toNativeUtf8(allocator: arena);
+        publicKey = publicKeyHexValue.toNativeUtf8(allocator: arena),
+        ethPubKeyTypeUrl = (ethPubKeyTypeUrlValue ?? '').trim().toNativeUtf8(allocator: arena);
 
   final Pointer<Utf8> chainId;
   final Pointer<Utf8> msgs;
   final Pointer<Utf8> fee;
   final Pointer<Utf8> memo;
   final Pointer<Utf8> publicKey;
+
+  /// Empty means Ethermint's `ethsecp256k1` type URL.
+  final Pointer<Utf8> ethPubKeyTypeUrl;
 }

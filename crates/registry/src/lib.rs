@@ -30,6 +30,22 @@ pub mod features {
     pub const COSMWASM: &str = "cosmwasm";
     /// Secret Network's encrypted CosmWasm variant.
     pub const SECRETWASM: &str = "secretwasm";
+    /// Keplr's flag for a cosmos/evm chain: `eth-key-sign` with the
+    /// `/cosmos.evm.crypto.v1.ethsecp256k1.PubKey` type URL (KiiChain, NVNM, turkchain).
+    pub const ETH_SECP256K1_COSMOS: &str = "eth-secp256k1-cosmos";
+    /// Keplr's flag for Initia: `eth-key-sign` with `/initia.crypto.v1beta1.ethsecp256k1.PubKey`.
+    pub const ETH_SECP256K1_INITIA: &str = "eth-secp256k1-initia";
+}
+
+/// `ethsecp256k1` type URLs a chain can name instead of Ethermint's.
+///
+/// The 33-byte key is the same in all of them; the type URL is what tells the chain which
+/// signature to check, and a node refuses to even decode a transaction whose type it does not
+/// register ("unable to resolve type URL").
+pub mod eth_pub_key_type_urls {
+    pub const INJECTIVE: &str = "/injective.crypto.v1beta1.ethsecp256k1.PubKey";
+    pub const COSMOS_EVM: &str = "/cosmos.evm.crypto.v1.ethsecp256k1.PubKey";
+    pub const INITIA: &str = "/initia.crypto.v1beta1.ethsecp256k1.PubKey";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,13 +234,30 @@ impl ChainInfo {
 
     /// Type URL advertised for an `eth-key-sign` public key.
     ///
-    /// `None` means the Ethermint default. A chain such as Injective sets this
-    /// because the key bytes are the same and only the type URL differs.
+    /// `None` means the Ethermint default. In order: the descriptor's explicit
+    /// `ethPubKeyTypeUrl`; Injective, by chain id; then Keplr's feature flags,
+    /// `eth-secp256k1-cosmos` for cosmos/evm and `eth-secp256k1-initia` for Initia. The same
+    /// rule as Keplr's and the dashboard's `pubKeyTypeUrlFor`, so a chain added from a Keplr
+    /// descriptor that carries only the flag still signs with the type its nodes decode.
     pub fn eth_pub_key_type_url(&self) -> Option<&str> {
-        self.eth_pub_key_type_url
+        if let Some(url) = self
+            .eth_pub_key_type_url
             .as_deref()
             .map(str::trim)
             .filter(|url| !url.is_empty())
+        {
+            return Some(url);
+        }
+        if self.chain_id.starts_with("injective") {
+            return Some(eth_pub_key_type_urls::INJECTIVE);
+        }
+        if self.has_feature(features::ETH_SECP256K1_COSMOS) {
+            return Some(eth_pub_key_type_urls::COSMOS_EVM);
+        }
+        if self.has_feature(features::ETH_SECP256K1_INITIA) {
+            return Some(eth_pub_key_type_urls::INITIA);
+        }
+        None
     }
 
     pub fn supports_cosmwasm(&self) -> bool {
@@ -440,8 +473,12 @@ mod tests {
 
     #[test]
     fn eth_pub_key_type_url_is_optional_chain_data() {
+        // Injective is known by its chain id, with or without the explicit field.
         let plain = ChainInfo::from_json(INJECTIVE).unwrap();
-        assert_eq!(plain.eth_pub_key_type_url(), None);
+        assert_eq!(
+            plain.eth_pub_key_type_url(),
+            Some("/injective.crypto.v1beta1.ethsecp256k1.PubKey")
+        );
         let json = INJECTIVE.replace(
             r#""features":"#,
             r#""ethPubKeyTypeUrl": "/injective.crypto.v1beta1.ethsecp256k1.PubKey", "features":"#,
@@ -450,6 +487,53 @@ mod tests {
         assert_eq!(
             chain.eth_pub_key_type_url(),
             Some("/injective.crypto.v1beta1.ethsecp256k1.PubKey")
+        );
+    }
+
+    #[test]
+    fn eth_pub_key_type_url_follows_keplr_feature_flags() {
+        let ethermint = INJECTIVE
+            .replace("injective-1", "evmos_9001-2")
+            .replace(r#""inj""#, r#""evmos""#);
+        assert_eq!(
+            ChainInfo::from_json(&ethermint)
+                .unwrap()
+                .eth_pub_key_type_url(),
+            None
+        );
+
+        let cosmos_evm = ethermint.replace(
+            r#""eth-key-sign","#,
+            r#""eth-key-sign", "eth-secp256k1-cosmos","#,
+        );
+        assert_eq!(
+            ChainInfo::from_json(&cosmos_evm)
+                .unwrap()
+                .eth_pub_key_type_url(),
+            Some("/cosmos.evm.crypto.v1.ethsecp256k1.PubKey")
+        );
+
+        let initia = ethermint.replace(
+            r#""eth-key-sign","#,
+            r#""eth-key-sign", "eth-secp256k1-initia","#,
+        );
+        assert_eq!(
+            ChainInfo::from_json(&initia)
+                .unwrap()
+                .eth_pub_key_type_url(),
+            Some("/initia.crypto.v1beta1.ethsecp256k1.PubKey")
+        );
+
+        // An explicit field wins over the flag.
+        let explicit = cosmos_evm.replace(
+            r#""features":"#,
+            r#""ethPubKeyTypeUrl": "/custom.crypto.v1.ethsecp256k1.PubKey", "features":"#,
+        );
+        assert_eq!(
+            ChainInfo::from_json(&explicit)
+                .unwrap()
+                .eth_pub_key_type_url(),
+            Some("/custom.crypto.v1.ethsecp256k1.PubKey")
         );
     }
 
