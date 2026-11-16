@@ -3,9 +3,9 @@
   "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
   "hd_path_template": "m/44'/{coin_type}'/0'/0/0",
   "registry": {
-    "chains_parsed": 332,
+    "chains_parsed": 345,
     "chains_skipped": 0,
-    "distinct_combinations": 241,
+    "distinct_combinations": 254,
     "self_checked_against_cosmjs_wallet": 8
   },
   "skipped": [],
@@ -115,6 +115,19 @@
       "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
       "address": "allo19rl4cm2hmr8afy4kldpxz3fka4jguq0ajnh7gv",
       "valoper_address": "allovaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0a9h3a5q"
+    },
+    {
+      "chain_id": "amitis-network",
+      "chain_name": "Amitis Network",
+      "file": "amitis-network.json",
+      "coin_type": 118,
+      "prefix": "amitis",
+      "scheme": "cosmos",
+      "valoper_prefix": "amitisvaloper",
+      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
+      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
+      "address": "amitis19rl4cm2hmr8afy4kldpxz3fka4jguq0asqwwcl",
+      "valoper_address": "amitisvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0avkn6s3"
     },
     {
       "chain_id": "andromeda-1",
@@ -232,6 +245,19 @@
       "account_id_hex": "65ceb19dad4f90f4272154575d13ffdfd8b02656",
       "address": "band1vh8tr8ddf7g0gfep23t46yllmlvtqfjknjdd38",
       "valoper_address": "bandvaloper1vh8tr8ddf7g0gfep23t46yllmlvtqfjklyfw5v"
+    },
+    {
+      "chain_id": "baradur",
+      "chain_name": "Baradur",
+      "file": "baradur.json",
+      "coin_type": 118,
+      "prefix": "baradur",
+      "scheme": "cosmos",
+      "valoper_prefix": "baradurvaloper",
+      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
+      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
+      "address": "baradur19rl4cm2hmr8afy4kldpxz3fka4jguq0axa4lgr",
+      "valoper_address": "baradurvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0atmu5ug"
     },
     {
       "chain_id": "bitbadges-1",
@@ -448,6 +474,19 @@
       "valoper_address": "bridgevaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0a0hkz5p"
     },
     {
+      "chain_id": "blakiston",
+      "chain_name": "Blakiston",
+      "file": "blakiston.json",
+      "coin_type": 118,
+      "prefix": "bs9",
+      "scheme": "cosmos",
+      "valoper_prefix": "bs9valoper",
+      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
+      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
+      "address": "bs919rl4cm2hmr8afy4kldpxz3fka4jguq0au50h8p",
+      "valoper_address": "bs9valoper19rl4cm2hmr8afy4kldpxz3fka4jguq0aj7kmx4"
+    },
+    {
       "chain_id": "beezee-1",
       "chain_name": "BeeZee",
       "file": "beezee.json",
@@ -472,6 +511,20 @@
       "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
       "address": "c4e19rl4cm2hmr8afy4kldpxz3fka4jguq0alc5sxt",
       "valoper_address": "c4evaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0a0ef68u"
+    },
+    {
+      "chain_id": "c8ntinuum_8-1",
+      "chain_name": "c8ntinuum",
+      "file": "c8ntinuum_8.json",
+      "coin_type": 60,
+      "prefix": "c8",
+      "scheme": "ethermint",
+      "valoper_prefix": "c8valoper",
+      "pubkey_compressed_hex": "0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299",
+      "account_id_hex": "9858effd232b4033e47d90003d41ec34ecaeda94",
+      "address": "c81npvwllfr9dqr8erajqqr6s0vxnk2ak55zr4cx5",
+      "valoper_address": "c8valoper1npvwllfr9dqr8erajqqr6s0vxnk2ak556ye28v",
+      "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
     },
     {
       "chain_id": "canto_7700-1",
@@ -580,6 +633,19 @@
       "valoper_address": "comdexvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0agc4dcr"
     },
     {
+      "chain_id": "congrid-main",
+      "chain_name": "Congrid",
+      "file": "congrid-main.json",
+      "coin_type": 118,
+      "prefix": "congrid",
+      "scheme": "cosmos",
+      "valoper_prefix": "congridvaloper",
+      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
+      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
+      "address": "congrid19rl4cm2hmr8afy4kldpxz3fka4jguq0a4q9elz",
+      "valoper_address": "congridvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0a24acgk"
+    },
+    {
       "chain_id": "coreum-mainnet-1",
       "chain_name": "TX",
       "file": "coreum-mainnet.json",
@@ -685,6 +751,19 @@
       "address": "cysic1npvwllfr9dqr8erajqqr6s0vxnk2ak552890yf",
       "valoper_address": "cysicvaloper1npvwllfr9dqr8erajqqr6s0vxnk2ak55nu6xl2",
       "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
+    },
+    {
+      "chain_id": "messaging",
+      "chain_name": "DChat",
+      "file": "messaging.json",
+      "coin_type": 118,
+      "prefix": "dc",
+      "scheme": "cosmos",
+      "valoper_prefix": "dcvaloper",
+      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
+      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
+      "address": "dc19rl4cm2hmr8afy4kldpxz3fka4jguq0aecuvxr",
+      "valoper_address": "dcvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ag73cs3"
     },
     {
       "chain_id": "desmos-mainnet",
@@ -1189,7 +1268,21 @@
       "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
     },
     {
-      "chain_id": "irishub-1",
+      "chain_id": "hyve_7847-1",
+      "chain_name": "HyveChain",
+      "file": "hyve_7847.json",
+      "coin_type": 60,
+      "prefix": "hyve",
+      "scheme": "ethermint",
+      "valoper_prefix": "hyvevaloper",
+      "pubkey_compressed_hex": "0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299",
+      "account_id_hex": "9858effd232b4033e47d90003d41ec34ecaeda94",
+      "address": "hyve1npvwllfr9dqr8erajqqr6s0vxnk2ak55htmeq4",
+      "valoper_address": "hyvevaloper1npvwllfr9dqr8erajqqr6s0vxnk2ak554eyp29",
+      "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
+    },
+    {
+      "chain_id": "irishub-2",
       "chain_name": "IRISnet",
       "file": "irishub.json",
       "coin_type": 118,
@@ -1608,6 +1701,19 @@
       "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
       "address": "lumi19rl4cm2hmr8afy4kldpxz3fka4jguq0ae7gd62",
       "valoper_address": "lumivaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ae60rq8"
+    },
+    {
+      "chain_id": "luxa-1",
+      "chain_name": "LUXA Network",
+      "file": "luxa.json",
+      "coin_type": 118,
+      "prefix": "luxa",
+      "scheme": "cosmos",
+      "valoper_prefix": "luxavaloper",
+      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
+      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
+      "address": "luxa19rl4cm2hmr8afy4kldpxz3fka4jguq0a6qr0tr",
+      "valoper_address": "luxavaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0ajvwuk8"
     },
     {
       "chain_id": "mande_18071918-1",
@@ -2136,6 +2242,19 @@
       "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
     },
     {
+      "chain_id": "wpd-l2a-mainnet-1",
+      "chain_name": "wpd-l2a-mainnet-1",
+      "file": "wpd-l2a-mainnet.json",
+      "coin_type": 118,
+      "prefix": "poa",
+      "scheme": "cosmos",
+      "valoper_prefix": "poavaloper",
+      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
+      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
+      "address": "poa19rl4cm2hmr8afy4kldpxz3fka4jguq0andt9j5",
+      "valoper_address": "poavaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0aarjv6h"
+    },
+    {
       "chain_id": "pocket-lego-testnet",
       "chain_name": "Pocket Network Testnet",
       "file": "pocket-lego-testnet.json",
@@ -2187,19 +2306,6 @@
       "address": "qubetics1npvwllfr9dqr8erajqqr6s0vxnk2ak55tcw3nd",
       "valoper_address": "qubeticsvaloper1npvwllfr9dqr8erajqqr6s0vxnk2ak55g6c87f",
       "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
-    },
-    {
-      "chain_id": "quicksilver-2",
-      "chain_name": "Quicksilver",
-      "file": "quicksilver.json",
-      "coin_type": 118,
-      "prefix": "quick",
-      "scheme": "cosmos",
-      "valoper_prefix": "quickvaloper",
-      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
-      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
-      "address": "quick19rl4cm2hmr8afy4kldpxz3fka4jguq0ahya0x8",
-      "valoper_address": "quickvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0affnzgw"
     },
     {
       "chain_id": "earendel-1",
@@ -2507,6 +2613,20 @@
       "valoper_address": "soarvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0aq5e56x"
     },
     {
+      "chain_id": "sobya-1",
+      "chain_name": "SOBYA",
+      "file": "sobya.json",
+      "coin_type": 60,
+      "prefix": "sobya",
+      "scheme": "ethermint",
+      "valoper_prefix": "sobyavaloper",
+      "pubkey_compressed_hex": "0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299",
+      "account_id_hex": "9858effd232b4033e47d90003d41ec34ecaeda94",
+      "address": "sobya1npvwllfr9dqr8erajqqr6s0vxnk2ak552m02jq",
+      "valoper_address": "sobyavaloper1npvwllfr9dqr8erajqqr6s0vxnk2ak55sck65c",
+      "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
+    },
+    {
       "chain_id": "sommelier-3",
       "chain_name": "Sommelier",
       "file": "sommelier.json",
@@ -2638,6 +2758,19 @@
       "valoper_address": "stwartvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0auh4jyq"
     },
     {
+      "chain_id": "sunima_8081-2",
+      "chain_name": "Sunima Testnet",
+      "file": "sunima_8081.json",
+      "coin_type": 118,
+      "prefix": "sunima",
+      "scheme": "cosmos",
+      "valoper_prefix": "sunimavaloper",
+      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
+      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
+      "address": "sunima19rl4cm2hmr8afy4kldpxz3fka4jguq0aveydgz",
+      "valoper_address": "sunimavaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0a79r93t"
+    },
+    {
       "chain_id": "dawn-1",
       "chain_name": "Sunrise Testnet",
       "file": "dawn.json",
@@ -2757,9 +2890,9 @@
       "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
     },
     {
-      "chain_id": "90u-4",
-      "chain_name": "Terp Testnet",
-      "file": "90u.json",
+      "chain_id": "morocco-1",
+      "chain_name": "Terp Network",
+      "file": "morocco.json",
       "coin_type": 118,
       "prefix": "terp",
       "scheme": "cosmos",
@@ -2956,6 +3089,20 @@
       "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
     },
     {
+      "chain_id": "twix-1",
+      "chain_name": "TWIX Mainnet",
+      "file": "twix.json",
+      "coin_type": 60,
+      "prefix": "twix",
+      "scheme": "ethermint",
+      "valoper_prefix": "twixvaloper",
+      "pubkey_compressed_hex": "0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299",
+      "account_id_hex": "9858effd232b4033e47d90003d41ec34ecaeda94",
+      "address": "twix1npvwllfr9dqr8erajqqr6s0vxnk2ak554qzwtv",
+      "valoper_address": "twixvaloper1npvwllfr9dqr8erajqqr6s0vxnk2ak55427mql",
+      "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
+    },
+    {
       "chain_id": "umee-1",
       "chain_name": "UX",
       "file": "umee.json",
@@ -3101,6 +3248,19 @@
       "valoper_address": "wormholevaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0aycljns"
     },
     {
+      "chain_id": "wpd-mainnet-1",
+      "chain_name": "WPD Mainnet",
+      "file": "wpd-mainnet.json",
+      "coin_type": 118,
+      "prefix": "wpd",
+      "scheme": "cosmos",
+      "valoper_prefix": "wpdvaloper",
+      "pubkey_compressed_hex": "024f4e2ad99c34d60b9ba6283c9431a8418af8673212961f97a77b6377fcd05b62",
+      "account_id_hex": "28ff5c6d57d8cfd492b6fb42614536ed648e01fd",
+      "address": "wpd19rl4cm2hmr8afy4kldpxz3fka4jguq0axtuacj",
+      "valoper_address": "wpdvaloper19rl4cm2hmr8afy4kldpxz3fka4jguq0a8anmm0"
+    },
+    {
       "chain_id": "xion-mainnet-1",
       "chain_name": "Verona",
       "file": "xion-mainnet.json",
@@ -3178,6 +3338,20 @@
       "account_id_hex": "9858effd232b4033e47d90003d41ec34ecaeda94",
       "address": "zeta1npvwllfr9dqr8erajqqr6s0vxnk2ak55l5u792",
       "valoper_address": "zetavaloper1npvwllfr9dqr8erajqqr6s0vxnk2ak55m5yzgu",
+      "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
+    },
+    {
+      "chain_id": "zetaphy_77390-1",
+      "chain_name": "ZETAPHY Testnet",
+      "file": "zetaphy_77390.json",
+      "coin_type": 60,
+      "prefix": "zetaphy",
+      "scheme": "ethermint",
+      "valoper_prefix": "zetaphyvaloper",
+      "pubkey_compressed_hex": "0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299",
+      "account_id_hex": "9858effd232b4033e47d90003d41ec34ecaeda94",
+      "address": "zetaphy1npvwllfr9dqr8erajqqr6s0vxnk2ak55l3x5km",
+      "valoper_address": "zetaphyvaloper1npvwllfr9dqr8erajqqr6s0vxnk2ak55wrr4f9",
       "eth_address": "0x9858effd232b4033e47d90003d41ec34ecaeda94"
     },
     {
