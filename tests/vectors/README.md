@@ -24,8 +24,8 @@ BIP-32 vectors (17 derived keys), and both SLIP-0010 ed25519 vectors (12 derived
 prove the derivation maths is right.
 
 **`registry-addresses.json`** holds one case per distinct (coin type, bech32 prefix, address
-scheme) combination in `zunia-chain-registry`: 241 combinations across 332 chains, 26 coin
-types, 50 of them Ethermint. These prove Zunia applies that maths with the parameters the
+scheme) combination in `zunia-chain-registry`: 254 combinations across 345 chains, 26 coin
+types, 55 of them Ethermint. These prove Zunia applies that maths with the parameters the
 registry actually supplies. The BIP vectors cannot catch a wrong coin type or a missed Ethermint
 flag, and either produces a valid address belonging to nobody.
 
