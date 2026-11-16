@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'zunia_core'
-  s.version          = '0.1.1'
+  s.version          = '0.1.2'
   s.summary          = 'Zunia wallet kernel FFI bindings'
   s.description      = 'Links the prebuilt ZuniaCore kernel into the plugin framework for DynamicLibrary.process().'
   s.homepage         = 'https://zunialab.com'

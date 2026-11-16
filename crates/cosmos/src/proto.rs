@@ -267,6 +267,22 @@ fn read_varint(input: &[u8]) -> Result<(u64, &[u8])> {
     Err(CosmosError::Decode)
 }
 
+/// Reads the varints of a packed repeated field, the body of one length-delimited occurrence.
+///
+/// A repeated scalar may arrive packed, as one length-delimited field holding the varints back to
+/// back, or unpacked, as one varint field per element, and a decoder must accept both: the chain
+/// does, and an encoder picks either. A run that stops in the middle of a varint is an error, and
+/// an empty run is an empty list.
+pub fn decode_packed_varints(mut input: &[u8]) -> Result<Vec<u64>> {
+    let mut values = Vec::new();
+    while !input.is_empty() {
+        let (value, rest) = read_varint(input)?;
+        values.push(value);
+        input = rest;
+    }
+    Ok(values)
+}
+
 /// Finds the first field with `tag`.
 ///
 /// For reading bytes this crate encoded itself, as the tests do. Code reading bytes from anyone

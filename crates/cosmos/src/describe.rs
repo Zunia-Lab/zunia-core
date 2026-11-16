@@ -34,7 +34,10 @@ use serde_json::{json, Map, Value};
 use crate::amount::Coin;
 use crate::decode::{DecodedMsg, DecodedTx};
 
-/// The address a message sends funds to: a send's `to_address`, an IBC transfer's `receiver`.
+/// The address a message sends funds, ownership or rights to: a send's `to_address`, an IBC
+/// transfer's `receiver`, and for a dApp message ([`crate::dapp::DappMsg::recipient`]) a new
+/// position owner, a withdraw address, a new contract admin, an instantiate's admin, or a
+/// multi-send's one outside output.
 ///
 /// For the first-time-recipient warning, which compares it with the addresses a user has paid
 /// before. `None` for every other message, and for an unknown one. A contract call's recipients
@@ -43,6 +46,7 @@ pub fn recipient(msg: &DecodedMsg) -> Option<&str> {
     match msg {
         DecodedMsg::Send { to, .. } => Some(to),
         DecodedMsg::IbcTransfer { receiver, .. } => Some(receiver),
+        DecodedMsg::Dapp(msg) => msg.recipient(),
         DecodedMsg::Delegate { .. }
         | DecodedMsg::Undelegate { .. }
         | DecodedMsg::Redelegate { .. }
@@ -57,7 +61,8 @@ pub fn recipient(msg: &DecodedMsg) -> Option<&str> {
     }
 }
 
-/// What a contract call or an IBC transfer carries that its summary does not say.
+/// What a contract call, an IBC transfer, a multi-send, an instantiate or a migrate carries that
+/// its summary does not say ([`crate::dapp::DappMsg::detail`] for the last three).
 ///
 /// A contract call: `{ kind: "execute-contract", contract, msg, funds }`, with `msg` the
 /// contract message parsed as JSON. An IBC transfer: `{ kind: "ibc-transfer", sourceChannel,
@@ -92,6 +97,7 @@ pub fn message_detail(msg: &DecodedMsg) -> Option<Value> {
             "token": token.as_ref().map(coin_json),
             "memo": memo,
         })),
+        DecodedMsg::Dapp(msg) => msg.detail(),
         DecodedMsg::Send { .. }
         | DecodedMsg::Delegate { .. }
         | DecodedMsg::Undelegate { .. }

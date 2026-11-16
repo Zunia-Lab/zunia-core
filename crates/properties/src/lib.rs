@@ -137,7 +137,46 @@ fn message_singular_fields(type_url: &str) -> &'static [u32] {
         "/cosmos.gov.v1beta1.MsgVote" | "/cosmos.gov.v1.MsgVote" => &[1, 2, 3, 4],
         "/ibc.applications.transfer.v1.MsgTransfer" => &[1, 2, 3, 4, 5, 6, 7, 8],
         "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn"
+        | "/osmosis.gamm.v1beta1.MsgSwapExactAmountIn"
         | "/osmosis.poolmanager.v1beta1.MsgSplitRouteSwapExactAmountIn" => &[1, 3, 4],
+        // The singular fields of the dApp messages, from the upstream protos. Repeated fields
+        // (coins, position ids, routes, options) are left out.
+        "/osmosis.concentratedliquidity.v1beta1.MsgCreatePosition" => &[1, 2, 3, 4, 6, 7],
+        "/osmosis.concentratedliquidity.v1beta1.MsgAddToPosition" => &[1, 2, 3, 4, 5, 6],
+        "/osmosis.concentratedliquidity.v1beta1.MsgWithdrawPosition" => &[1, 2, 3],
+        "/osmosis.concentratedliquidity.v1beta1.MsgCollectSpreadRewards"
+        | "/osmosis.concentratedliquidity.v1beta1.MsgCollectIncentives" => &[2],
+        "/osmosis.concentratedliquidity.v1beta1.MsgTransferPositions" => &[2, 3],
+        "/osmosis.gamm.v1beta1.MsgJoinPool" | "/osmosis.gamm.v1beta1.MsgExitPool" => &[1, 2, 3],
+        "/osmosis.gamm.v1beta1.MsgJoinSwapExternAmountIn"
+        | "/osmosis.gamm.v1beta1.MsgExitSwapExternAmountOut" => &[1, 2, 3, 4],
+        "/osmosis.gamm.v1beta1.MsgExitSwapShareAmountIn"
+        | "/osmosis.gamm.v1beta1.MsgJoinSwapShareAmountOut" => &[1, 2, 3, 4, 5],
+        "/osmosis.gamm.v1beta1.MsgSwapExactAmountOut" => &[1, 3, 4],
+        "/osmosis.lockup.MsgLockTokens" | "/osmosis.lockup.MsgBeginUnlocking" => &[1, 2],
+        "/osmosis.lockup.MsgBeginUnlockingAll"
+        | "/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission" => &[1],
+        "/osmosis.superfluid.MsgSuperfluidUndelegate"
+        | "/osmosis.superfluid.MsgSuperfluidUnbondLock"
+        | "/cosmos.distribution.v1beta1.MsgSetWithdrawAddress"
+        | "/cosmos.feegrant.v1beta1.MsgRevokeAllowance"
+        | "/cosmos.gov.v1beta1.MsgDeposit"
+        | "/cosmos.gov.v1.MsgDeposit"
+        | "/cosmos.gov.v1beta1.MsgVoteWeighted" => &[1, 2],
+        "/osmosis.superfluid.MsgSuperfluidDelegate"
+        | "/osmosis.superfluid.MsgSuperfluidUndelegateAndUnbondLock"
+        | "/cosmos.authz.v1beta1.MsgRevoke"
+        | "/cosmwasm.wasm.v1.MsgUpdateAdmin" => &[1, 2, 3],
+        "/osmosis.superfluid.MsgAddToConcentratedLiquiditySuperfluidPosition"
+        | "/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation" => &[1, 2, 3, 4],
+        "/osmosis.superfluid.MsgLockAndSuperfluidDelegate" => &[1, 3],
+        "/osmosis.superfluid.MsgCreateFullRangePositionAndSuperfluidDelegate" => &[1, 3, 4],
+        "/cosmos.distribution.v1beta1.MsgFundCommunityPool" => &[2],
+        "/cosmos.gov.v1.MsgVoteWeighted" => &[1, 2, 4],
+        "/cosmwasm.wasm.v1.MsgInstantiateContract" => &[1, 2, 3, 4, 5],
+        "/cosmwasm.wasm.v1.MsgInstantiateContract2" => &[1, 2, 3, 4, 5, 7, 8],
+        "/cosmwasm.wasm.v1.MsgMigrateContract" => &[1, 2, 3, 4],
+        "/cosmwasm.wasm.v1.MsgClearAdmin" => &[1, 3],
         _ => &[],
     }
 }
@@ -149,7 +188,23 @@ fn message_coin_fields(type_url: &str) -> &'static [u32] {
         | "/cosmos.staking.v1beta1.MsgDelegate"
         | "/cosmos.staking.v1beta1.MsgUndelegate"
         | "/ibc.applications.transfer.v1.MsgTransfer"
-        | "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn" => &[3],
+        | "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn"
+        | "/osmosis.gamm.v1beta1.MsgSwapExactAmountIn"
+        | "/osmosis.gamm.v1beta1.MsgJoinSwapExternAmountIn"
+        | "/osmosis.gamm.v1beta1.MsgExitSwapExternAmountOut"
+        | "/osmosis.superfluid.MsgSuperfluidUndelegateAndUnbondLock"
+        | "/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation" => &[3],
+        "/osmosis.superfluid.MsgAddToConcentratedLiquiditySuperfluidPosition" => &[3, 4],
+        "/osmosis.gamm.v1beta1.MsgSwapExactAmountOut" => &[4],
+        "/osmosis.concentratedliquidity.v1beta1.MsgCreatePosition" => &[5],
+        "/osmosis.gamm.v1beta1.MsgJoinPool" | "/osmosis.gamm.v1beta1.MsgExitPool" => &[4],
+        "/osmosis.lockup.MsgLockTokens" | "/osmosis.lockup.MsgBeginUnlocking" => &[3],
+        "/osmosis.superfluid.MsgLockAndSuperfluidDelegate"
+        | "/osmosis.superfluid.MsgCreateFullRangePositionAndSuperfluidDelegate" => &[2],
+        "/cosmos.distribution.v1beta1.MsgFundCommunityPool" => &[1],
+        "/cosmos.gov.v1beta1.MsgDeposit" | "/cosmos.gov.v1.MsgDeposit" => &[3],
+        "/cosmwasm.wasm.v1.MsgInstantiateContract"
+        | "/cosmwasm.wasm.v1.MsgInstantiateContract2" => &[6],
         "/cosmos.staking.v1beta1.MsgBeginRedelegate" => &[4],
         "/cosmwasm.wasm.v1.MsgExecuteContract" => &[5],
         _ => &[],
