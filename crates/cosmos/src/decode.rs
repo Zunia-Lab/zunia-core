@@ -29,6 +29,7 @@
 use serde_json::Value;
 
 use crate::amount::Coin;
+use crate::dapp::{self, DappMsg};
 use crate::error::{CosmosError, Result};
 use crate::msg::{
     contract_action, describe_hops, describe_out_hops, describe_out_split, describe_split,
@@ -124,6 +125,9 @@ pub enum DecodedMsg {
         token_out_denom: String,
         token_in_max_amount: String,
     },
+    /// A message a dApp builds and this build reads: liquidity, lockups, superfluid staking,
+    /// more of the Cosmos SDK and CosmWasm. See [`crate::dapp`].
+    Dapp(DappMsg),
     /// A message this build cannot decode.
     ///
     /// Carries the type URL so the UI can name it, and the raw length so a user can see that
@@ -257,6 +261,7 @@ impl DecodedMsg {
                 split_out_total(routes),
                 describe_out_split(routes)
             ),
+            Self::Dapp(msg) => msg.summary(),
             // Deliberately alarming. The user is being asked to authorise something the wallet
             // cannot read, and the prompt must say so rather than soften it.
             Self::Unknown {
@@ -301,6 +306,7 @@ impl DecodedMsg {
             | Self::SplitRouteSwapExactAmountIn { sender, .. }
             | Self::SwapExactAmountOut { sender, .. }
             | Self::SplitRouteSwapExactAmountOut { sender, .. } => vec![sender],
+            Self::Dapp(msg) => msg.addresses(),
             Self::Unknown { .. } => Vec::new(),
         }
     }
@@ -594,7 +600,8 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
                 funds: coins_at(5)?,
             }
         }
-        "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn" => {
+        "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountIn"
+        | "/osmosis.gamm.v1beta1.MsgSwapExactAmountIn" => {
             let mut routes = Vec::new();
             for hop in find_all(&fields, 2) {
                 routes.push(decode_hop(hop.as_bytes()?)?);
@@ -619,7 +626,8 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
                 token_out_min_amount: string_at(4)?,
             }
         }
-        "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountOut" => {
+        "/osmosis.poolmanager.v1beta1.MsgSwapExactAmountOut"
+        | "/osmosis.gamm.v1beta1.MsgSwapExactAmountOut" => {
             let mut routes = Vec::new();
             for hop in find_all(&fields, 2) {
                 routes.push(decode_out_hop(hop.as_bytes()?)?);
@@ -645,7 +653,10 @@ fn decode_known(type_url: &str, value: &[u8]) -> Result<Option<DecodedMsg>> {
                 token_in_max_amount: string_at(4)?,
             }
         }
-        _ => return Ok(None),
+        other => match dapp::decode(other, &fields)? {
+            Some(msg) => DecodedMsg::Dapp(msg),
+            None => return Ok(None),
+        },
     };
 
     // A recognised type URL is not the same as a message the wallet understood. Protobuf omits
@@ -736,6 +747,7 @@ fn local_addresses_are_bech32(msg: &DecodedMsg) -> bool {
         | DecodedMsg::SplitRouteSwapExactAmountIn { sender, .. }
         | DecodedMsg::SwapExactAmountOut { sender, .. }
         | DecodedMsg::SplitRouteSwapExactAmountOut { sender, .. } => (vec![sender], Vec::new()),
+        DecodedMsg::Dapp(msg) => (msg.accounts(), msg.derived_addresses()),
         DecodedMsg::Unknown { .. } => (Vec::new(), Vec::new()),
     };
 
@@ -818,6 +830,7 @@ fn is_complete(msg: &DecodedMsg) -> bool {
             validate_split_route_swap_exact_amount_out(routes, token_out_denom, token_in_max_amount)
                 .is_ok()
         }
+        DecodedMsg::Dapp(msg) => msg.is_valid(),
         // Already the honest answer.
         DecodedMsg::Unknown { .. } => true,
     };
@@ -890,7 +903,7 @@ fn decode_out_split_leg(bytes: &[u8]) -> Result<SwapAmountOutSplitRoute> {
 
 /// `cosmos.base.v1beta1.Coin`, wherever it appears: a fee, a send, a delegation, a swap input.
 /// Two amounts in one coin would show one figure while the chain moves the other.
-fn decode_coin(bytes: &[u8]) -> Result<Coin> {
+pub(crate) fn decode_coin(bytes: &[u8]) -> Result<Coin> {
     let fields = decode_fields(bytes)?;
     let denom = find_unique_field(&fields, 1)?
         .map(|v| v.as_string())

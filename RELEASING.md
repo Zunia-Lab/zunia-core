@@ -84,6 +84,12 @@ mobile app read it, so its shape is a contract:
   contract call's parsed message and funds, or an IBC transfer's channel, receiver, token and
   packet memo. The FFI gains `addresses`.
 
+- **0.1.2**: v2 unchanged in shape. The kernel reads more messages in clear text (liquidity,
+  lockups, superfluid, classic pools, more of the SDK and CosmWasm), `recipient` also names a
+  new position owner, a withdraw address, a new contract admin, an instantiate's admin and a
+  multi-send's single outside output, and `detail` gains `multi-send`, `instantiate-contract`
+  and `migrate-contract`.
+
 A consumer that must run against both tells them apart by `messages`. Adding a key is a patch
 release. Removing or renaming one, or changing a value's meaning, is a minor release, with a PR
 in every consumer before the tag.

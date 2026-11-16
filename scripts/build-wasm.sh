@@ -305,7 +305,51 @@ export interface IbcTransferDetail {
   memo: string;
 }
 
-export type DecodedMessageDetail = ExecuteContractDetail | IbcTransferDetail;
+/** One side of a multi-send: an address and the coins it pays or receives. */
+export interface MultiSendEntry {
+  address: string;
+  coins: Coin[];
+}
+
+/** What a `MsgMultiSend` carries: every input and every output. Kernel 0.1.2 and later. */
+export interface MultiSendDetail {
+  kind: "multi-send";
+  inputs: MultiSendEntry[];
+  outputs: MultiSendEntry[];
+}
+
+/**
+ * What a contract instantiation carries that its summary does not say. Kernel 0.1.2 and later.
+ * `salt` (hex) and `fixMsg` appear only for `MsgInstantiateContract2`.
+ */
+export interface InstantiateContractDetail {
+  kind: "instantiate-contract";
+  /** The code id, a decimal string. */
+  codeId: string;
+  label: string;
+  /** The admin, or `null` when the contract has none. */
+  admin: string | null;
+  msg: JsonValue;
+  funds: Coin[];
+  salt?: string;
+  fixMsg?: boolean;
+}
+
+/** What a contract migration carries. Kernel 0.1.2 and later. */
+export interface MigrateContractDetail {
+  kind: "migrate-contract";
+  contract: string;
+  /** The code id, a decimal string. */
+  codeId: string;
+  msg: JsonValue;
+}
+
+export type DecodedMessageDetail =
+  | ExecuteContractDetail
+  | IbcTransferDetail
+  | MultiSendDetail
+  | InstantiateContractDetail
+  | MigrateContractDetail;
 
 /** One message of a decoded transaction, in order. */
 export interface DecodedMessage {
@@ -315,14 +359,19 @@ export interface DecodedMessage {
   summary: string;
   /** True when this build cannot read the message. Such a message has no `recipient` or `detail`. */
   unknown: boolean;
-  /** Where funds go: a send's `to_address`, an IBC transfer's `receiver`. */
+  /**
+   * Where funds, ownership or rights go: a send's `to_address`, an IBC transfer's `receiver`, a
+   * position transfer's new owner, a staking-reward withdraw address, a contract's new admin or
+   * an instantiated contract's admin, and a multi-send's single outside output.
+   */
   recipient?: string;
-  /** The contract message or the packet memo, for a contract call or an IBC transfer. */
+  /** What the summary does not say: a contract call, an IBC transfer, a multi-send, an instantiate or a migrate. */
   detail?: DecodedMessageDetail;
 }
 
 /**
- * What {@link decodeDirectTx} returns: payload v2, kernel 0.1.1 and later.
+ * What {@link decodeDirectTx} returns: payload v2, kernel 0.1.1 and later. Kernel 0.1.2 adds
+ * detail kinds and recipients, not keys.
  *
  * The first six fields are 0.1.0's, unchanged. A caller that must also run against a 0.1.0
  * kernel can tell the two apart by `messages`. Every u64 is a decimal string.

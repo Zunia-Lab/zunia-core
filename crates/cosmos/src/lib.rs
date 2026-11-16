@@ -27,6 +27,7 @@
 
 pub mod amino;
 pub mod amount;
+pub mod dapp;
 pub mod decode;
 pub mod describe;
 pub mod error;

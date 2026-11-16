@@ -14,6 +14,7 @@ implementation's own bug back at itself.
 | `svm-signing.json` | `generate/svm-vectors.mjs` | `crates/svm/tests/golden_vectors.rs` |
 | `keyring-envelope.json` | `crates/kernel/examples/seal_fixture.rs` | `crates/kernel/tests/keyring_envelope.rs` |
 | `chain-verified-amino.json` | Not generated: real cosmoshub-4 transactions | `crates/cosmos/tests/chain_verified.rs` |
+| `chain-verified-dapp-messages.json` | Not generated: real mainnet transactions (raw bytes from the RPC, message JSON from the LCD) | `crates/cosmos/tests/chain_verified.rs` |
 
 ## What each set is for
 

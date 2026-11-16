@@ -624,6 +624,55 @@ console.log("\ndecode_direct_tx payload v2");
   const recover = core.decodeDirectTx(caseNamed("msg_execute_contract_32_no_funds").direct.sign_bytes_hex);
   eq("a call to a 32-byte contract is understood", recover.safeWithoutBlindSigning, true);
 
+  // Real mainnet transactions carrying dApp messages, decoded from the raw bytes the chain's RPC
+  // returned: a negative-tick position on Osmosis, a position transfer, and a multi-send.
+  {
+    const fixture = JSON.parse(
+      readFileSync(path.join(ROOT, "tests", "vectors", "chain-verified-dapp-messages.json"), "utf8"),
+    );
+    const varint = (n) => {
+      const out = [];
+      do {
+        let byte = n & 0x7f;
+        n = Math.floor(n / 128);
+        out.push(n ? byte | 0x80 : byte);
+      } while (n);
+      return Buffer.from(out);
+    };
+    const field = (tag, bytes) => Buffer.concat([varint(tag * 8 + 2), varint(bytes.length), bytes]);
+    const signDoc = (rawTx, chainId) => {
+      // TxRaw: body_bytes 1, auth_info_bytes 2.
+      let offset = 0;
+      const parts = {};
+      while (offset < rawTx.length) {
+        const key = rawTx[offset++];
+        let length = 0;
+        let shift = 0;
+        while (rawTx[offset] & 0x80) length |= (rawTx[offset++] & 0x7f) << shift, (shift += 7);
+        length |= rawTx[offset++] << shift;
+        parts[key >> 3] = rawTx.subarray(offset, offset + length);
+        offset += length;
+      }
+      return Buffer.concat([
+        field(1, parts[1]), field(2, parts[2]), field(3, Buffer.from(chainId)),
+        Buffer.concat([varint(4 * 8), varint(1)]),
+      ]).toString("hex");
+    };
+    const real = (name) => {
+      const c = fixture.cases.find((x) => x.typeUrl.endsWith(name));
+      return core.decodeDirectTx(signDoc(Buffer.from(c.tx, "base64"), c.chainId)).messages[c.msgIndex];
+    };
+    const create = real("MsgCreatePosition");
+    eq("a real MsgCreatePosition is understood", create.unknown, false);
+    ok("and names its pool and its negative ticks", create.summary.includes("pool 2639 between ticks -13870700 and -13869500"), create.summary);
+    const moved = real("MsgTransferPositions");
+    eq("a real MsgTransferPositions names its new owner", moved.recipient, "osmo1rgpgfcktv97rc8lp38th5pxw78hyu0ddnrktjx");
+    const multi = real("MsgMultiSend");
+    eq("a real MsgMultiSend carries its outputs in the detail", multi.detail?.kind, "multi-send");
+    const instantiate = real("MsgInstantiateContract");
+    eq("a real MsgInstantiateContract carries its label", typeof instantiate.detail?.label, "string");
+  }
+
   // An unknown message: named, flagged, and carrying nothing the wallet did not read.
   const unknown = core.decodeDirectTx(
     readFileSync(path.join(ROOT, "fuzz", "corpus", "tx_decoder", "regression_send_with_two_recipients")).toString("hex"),
